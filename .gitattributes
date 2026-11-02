@@ -1,0 +1,2 @@
+# Patches mix CRLF game lines with LF diff headers, keep their bytes exact
+*.patch -text
