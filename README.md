@@ -11,7 +11,7 @@ Every change is marked `// GOUL`, and each feature comes with a ready-to-read di
 
 | Mod | What it does | Diff |
 |---|---|---|
-| [Room Builder Plus](features/room-builder-plus/README.md) | Move and copy many furniture items at once while planning or refurbishing a room, redo, rebindable Ctrl+Z / Ctrl+Y / Ctrl+X / Ctrl+C, and a fix for the Remove Item toggle disappearing and getting stuck | [room-builder-plus.patch](patches/room-builder-plus.patch) |
+| [Room Builder Plus](features/room-builder-plus/README.md) | Move, copy, rotate and mirror many furniture items and inner walls (pillars) at once while planning or refurbishing a room, redo, rebindable Ctrl+Z / Ctrl+Y / Ctrl+X / Ctrl+C, and a fix for the Remove Item toggle disappearing and getting stuck | [room-builder-plus.patch](patches/room-builder-plus.patch) |
 
 ## Layout
 

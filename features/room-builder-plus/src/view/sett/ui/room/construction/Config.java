@@ -2,6 +2,7 @@ package view.sett.ui.room.construction;
 
 import init.constant.C;
 import settlement.main.SETT;
+import settlement.room.main.furnisher.FurnisherItemGroup;
 import snake2d.SPRITE_RENDERER;
 import snake2d.util.datatypes.DIR;
 import snake2d.util.gui.GuiSection;
@@ -132,6 +133,10 @@ final class Config implements ToolConfig {
 		// GOUL: another tool was picked while items were lifted
 		if (!SETT.ROOMS().placement.placer.mover.isCurrent())
 			SETT.ROOMS().placement.placer.mover.restore();
+		// GOUL: carried items of one type make it the current item, so placing goes on with it afterwards
+		FurnisherItemGroup carried = SETT.ROOMS().placement.placer.mover.carriedGroup();
+		if (carried != null && s.item() != carried.index())
+			s.setItem(carried.index());
 
 		if (VIEW.renderSecond() > s.problemTimer) {
 			s.problemGroup = null;

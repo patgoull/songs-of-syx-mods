@@ -31,11 +31,16 @@ import view.tool.PLACABLE;
 final class SItems {
 
 	private static CharSequence ¤¤Items = "¤items";
-	// GOUL
-	private static CharSequence ¤¤Move = "Move items";
-	private static CharSequence ¤¤MoveDesc = "Drag a rectangle over items, then move them all with the mouse. Click to drop, right click to cancel.";
-	private static CharSequence ¤¤Copy = "Copy items";
-	private static CharSequence ¤¤CopyDesc = "Drag a rectangle over items, then click to place copies of them. Right click to stop.";
+	// GOUL: plain text, not in the dictionary yet (D.ts would replace a ¤¤ field with its missing key)
+	private static CharSequence sMove = "Move items";
+	private static CharSequence sMoveDesc = "Drag a rectangle over items, then move them all with the mouse. Click to drop, right click to cancel. Hold Ctrl when releasing to select all items of the same types. Hold Alt (Ctrl+Alt+X, or Alt+click) to also pick up inner walls. While moving, resize, rotate and mirror the selection.";
+	private static CharSequence sCopy = "Copy items";
+	private static CharSequence sCopyDesc = "Drag a rectangle over items, then click to place copies of them. Right click to stop. Hold Ctrl when releasing to select all items of the same types. Hold Alt (Ctrl+Alt+C, or Alt+click) to also copy inner walls. While copying, resize, rotate and mirror the selection.";
+	private static CharSequence sSelection = "Selection";
+	private static CharSequence sFlipH = "Mirror left-right";
+	private static CharSequence sFlipHDesc = "Mirrors the moved or copied items horizontally.";
+	private static CharSequence sFlipV = "Mirror up-down";
+	private static CharSequence sFlipVDesc = "Mirrors the moved or copied items vertically.";
 //	private final RENDEROBJ upgrade;
 	private final RENDEROBJ title = new GHeader(¤¤Items).subify();
 	private final GuiSection section = new GuiSection();
@@ -45,6 +50,9 @@ final class SItems {
 	private final IButt[] butts = new IButt[8];
 	private final CLICKABLE bMove; // GOUL
 	private final CLICKABLE bCopy; // GOUL
+	private final CLICKABLE bFlipH; // GOUL
+	private final CLICKABLE bFlipV; // GOUL
+	private final GuiSection selection = new GuiSection(); // GOUL: the selection tools, always in the same place
 	
 	
 	static {
@@ -85,8 +93,15 @@ final class SItems {
 			butts[i] = new IButt(state, g);
 		}
 		
-		bMove = moveButt(UI.icons().s.handOpen.sized(Icon.M), false, ¤¤Move, ¤¤MoveDesc); // GOUL
-		bCopy = moveButt(SPRITES.icons().m.copy, true, ¤¤Copy, ¤¤CopyDesc); // GOUL
+		bMove = moveButt(UI.icons().s.handOpen.sized(Icon.M), false, sMove, sMoveDesc); // GOUL
+		bCopy = moveButt(SPRITES.icons().m.copy, true, sCopy, sCopyDesc); // GOUL
+		bFlipH = flipButt(arrows(UI.icons().s.arrow_left, UI.icons().s.arrow_right), true, sFlipH, sFlipHDesc); // GOUL
+		bFlipV = flipButt(arrows(UI.icons().s.arrowUp, UI.icons().s.arrowDown), false, sFlipV, sFlipVDesc); // GOUL
+		selection.addRightC(0, new GText(UI.FONT().S, sSelection).lablifySub()); // GOUL
+		selection.addRightC(8, bMove); // GOUL
+		selection.addRightC(2, bCopy); // GOUL
+		selection.addRightC(12, bFlipH); // GOUL
+		selection.addRightC(0, bFlipV); // GOUL
 
 //		upgrade = new GTarget(32, new GText(UI.FONT().S, DicMisc.¤¤Upgrade).lablifySub(), false, true, new INTE() {
 //			
@@ -149,6 +164,51 @@ final class SItems {
 		return KeyButt.wrap(a, c, KEYS.SETT(), copy ? "ROOM_ITEMS_COPY" : "ROOM_ITEMS_MOVE", title, desc, KEYCODES.KEY_LEFT_CONTROL, copy ? KEYCODES.KEY_C : KEYCODES.KEY_X);
 	}
 
+	// H / V by default, only does something while items are carried
+	private CLICKABLE flipButt(SPRITE icon, boolean horizontal, CharSequence title, CharSequence desc) {
+		ACTION a = new ACTION() {
+
+			@Override
+			public void exe() {
+				if (VIEW.s().tools.configCurrent() == state.config)
+					state.placement.placer.mover.flip(horizontal);
+			}
+		};
+
+		CLICKABLE c = new GButt.ButtPanel(icon) {
+
+			@Override
+			protected void clickA() {
+				a.exe();
+			}
+
+			@Override
+			protected void renAction() {
+				activeSet(state.placement.placer.mover.isCarrying() && state.placement.placer.mover.cantFlip(horizontal) == null);
+			}
+
+			@Override
+			public void hoverInfoGet(GUI_BOX text) {
+				CharSequence cant = state.placement.placer.mover.cantFlip(horizontal);
+				if (cant != null)
+					((GBox) text).error(cant);
+			}
+		};
+		return KeyButt.wrap(a, c, KEYS.SETT(), horizontal ? "ROOM_ITEMS_FLIP_H" : "ROOM_ITEMS_FLIP_V", title, desc, -1, horizontal ? KEYCODES.KEY_H : KEYCODES.KEY_V);
+	}
+
+	// two small arrows side by side, the game has no mirror icon
+	private static SPRITE arrows(SPRITE a, SPRITE b) {
+		return new SPRITE.Imp(a.width()+b.width(), Math.max(a.height(), b.height())) {
+
+			@Override
+			public void render(SPRITE_RENDERER r, int X1, int X2, int Y1, int Y2) {
+				a.render(r, X1, Y1);
+				b.render(r, X1+a.width(), Y1);
+			}
+		};
+	}
+
 	// GOUL: the item tool buttons (and the remove toggle) stay while removing items, like SShape does for the area
 	private boolean itemToolActive() {
 		PLACABLE p = state.placement.placer.itemPlacerCurrent();
@@ -161,13 +221,12 @@ final class SItems {
 		section.clear();
 		
 		section.addRightC(0, title);
-		section.addRightC(8, bMove); // GOUL
-		section.addRightC(2, bCopy); // GOUL
 		stolen.clear();
 		stolen.body().setDim(1, 32);
-		if (itemToolActive()) // GOUL: was VIEW.s().tools.is(state.placement.placer.itemPlacerCurrent())
+		if (itemToolActive() || state.placement.placer.mover.isCarrying()) // GOUL: was VIEW.s().tools.is(state.placement.placer.itemPlacerCurrent()). While carrying, they size and turn the selection
 			VIEW.s().tools.placer.stealButtons(stolen, true);
 		section.addRightC(8, stolen);
+		section.add(selection, 0, section.getLastY2()+4); // GOUL
 		section.add(table, 0, section.getLastY2()+4);
 		
 //		if (state.upgradeMax[state.b.index()] > 0) {
@@ -231,6 +290,8 @@ final class SItems {
 		@Override
 		protected void renAction() {
 			selectedSet(VIEW.s().tools.placer.getCurrent() == state.placement.placer.itemPlacerCurrent() && state.item() == ier.get());
+			if (state.placement.placer.mover.carriedGroup() == state.b.constructor().groups().get(ier.get())) // GOUL: the carried item type
+				selectedSet(true);
 		}
 		
 		@Override

@@ -36,3 +36,7 @@ edit of a copied vanilla class, in Jake's style, with no Lombok and one feature 
 - No game resources in `static` fields (static init runs before the game loads)
 - Wrap reflection in try/catch; game collections are `snake2d.util.sets.*`, not `java.util`
 - Check behaviour in the extracted game source before relying on template docs
+- UI text: `D.ts(Class)` replaces every `¤¤X` static field with dictionary entry `X` when the class is in `Dic.txt`,
+  and a missing entry becomes the bare key "X". So new texts in a vanilla class that's in the dictionary must be plain
+  fields (no `¤¤`), and `D.g(key, default)` ignores the default once the dictionary is loaded. `¤¤` fields are safe only
+  in new classes (not in the dictionary).

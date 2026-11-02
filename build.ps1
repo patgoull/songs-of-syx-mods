@@ -83,6 +83,11 @@ Write-Host "Wrote $patchFile"
 
 if ($Install) {
 	$target = Join-Path $env:APPDATA "songsofsyx\mods\$modName"
+	# The game keeps the mod's jars open while it runs
+	foreach ($jar in @(Get-ChildItem $target -Recurse -Filter *.jar -ErrorAction SilentlyContinue)) {
+		try { ([IO.File]::Open($jar.FullName, 'Open', 'ReadWrite', 'None')).Close() }
+		catch { Write-Host "Not installed: the game is running and has $($jar.Name) open. Close it and run again." -ForegroundColor Yellow; exit 1 }
+	}
 	if (Test-Path $target) { Remove-Item $target -Recurse -Force }
 	Copy-Item $modDir $target -Recurse
 	Write-Host "Installed to $target"
