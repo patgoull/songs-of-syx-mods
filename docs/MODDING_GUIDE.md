@@ -34,7 +34,7 @@ writes `_Info.txt`, and copies everything into the game's mod directory, so you 
 | Official example scripts (by the dev) | `...\Songs of Syx\base\script\000_Tutorial.jar`, `001_Tutorial.jar` |
 | Bundled Java runtime | `...\Songs of Syx\jre` (Temurin 21.0.11) |
 | JVM options used by the launcher | `...\Songs of Syx\jvmargs-launcher.txt` (currently `-Xmx4096m` etc.) |
-| **Local mods folder** (use this while developing) | `%APPDATA%\songsofsyx\mods` = `C:\Users\pattt\AppData\Roaming\songsofsyx\mods` (empty) |
+| **Local mods folder** (use this while developing) | `%APPDATA%\songsofsyx\mods` |
 | Steam Workshop mods | `C:\Steam\steamapps\workshop\content\1162750` (doesn't exist yet: nothing subscribed) |
 | Game logs | `%APPDATA%\songsofsyx\logs` |
 | Saves | `%APPDATA%\songsofsyx\saves` |
