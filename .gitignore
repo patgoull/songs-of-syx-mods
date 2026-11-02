@@ -1,0 +1,5 @@
+# Extracted game sources (Jake's code, never commit)
+/vanilla/
+
+# Build output
+/build/
