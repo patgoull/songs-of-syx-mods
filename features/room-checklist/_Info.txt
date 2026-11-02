@@ -1,0 +1,7 @@
+VERSION: "0.1.0",
+GAME_VERSION_MAJOR: 71,
+GAME_VERSION_MINOR: 44,
+NAME: "Goul - Room Checklist",
+DESC: "Shows in the room construction panel whether the room can be constructed, and on hover every requirement (items, workers, access, doorway) met or not, plus warnings. Works with Goul - Room Builder Plus.",
+AUTHOR: "Goul",
+INFO: "Patch-style mod, replaces SStats. See patches/room-checklist.patch",

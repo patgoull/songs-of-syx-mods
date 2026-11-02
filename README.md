@@ -12,6 +12,7 @@ Every change is marked `// GOUL`, and each feature comes with a ready-to-read di
 | Mod | What it does | Diff |
 |---|---|---|
 | [Room Builder Plus](features/room-builder-plus/README.md) | Move, copy, rotate and mirror many furniture items and inner walls (pillars) at once while planning or refurbishing a room, redo, rebindable Ctrl+Z / Ctrl+Y / Ctrl+X / Ctrl+C, and a fix for the Remove Item toggle disappearing and getting stuck | [room-builder-plus.patch](patches/room-builder-plus.patch) |
+| [Room Checklist](features/room-checklist/README.md) (proof of concept) | The room construction panel says whether the room can be constructed, and on hover lists every requirement met or not, instead of only the first problem | [room-checklist.patch](patches/room-checklist.patch) |
 
 ## Layout
 

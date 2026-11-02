@@ -1,0 +1,255 @@
+package settlement.room.main.placement;
+
+import init.sprite.UI.UI;
+import settlement.main.SETT;
+import settlement.room.main.furnisher.Furnisher;
+import settlement.room.main.furnisher.FurnisherItemGroup;
+import settlement.room.main.furnisher.FurnisherStat;
+import snake2d.util.datatypes.AREA;
+import snake2d.util.datatypes.COORDINATE;
+import snake2d.util.datatypes.DIR;
+import util.GUTIL;
+import util.colors.GCOLOR;
+import util.gui.misc.GBox;
+import util.gui.misc.GText;
+import util.info.GFORMAT;
+import util.text.D;
+
+/**
+ * GOUL: every requirement for constructing the planned room, met or not. The construct button only tells the first
+ * problem it finds (UtilPlacability.createProblem), this runs each of those checks on its own so they can be listed
+ * together, plus the warnings that don't block construction (support, insulation).
+ */
+public final class RoomChecklist {
+
+	private static CharSequence ¤¤title = "Requirements";
+	private static CharSequence ¤¤noArea = "The room has no area yet.";
+	private static CharSequence ¤¤atLeast = "at least";
+	private static CharSequence ¤¤needed = "needed";
+	private static CharSequence ¤¤reach = "Can be reached from outside";
+	private static CharSequence ¤¤reachNo = "Items cut the room off from the outside. Leave a free tile at the edge.";
+	private static CharSequence ¤¤connected = "All of the room is connected";
+	private static CharSequence ¤¤connectedNo = "Part of the room is cut off, by its shape or by items. Every free tile must be reachable.";
+	private static CharSequence ¤¤door = "Has a doorway";
+	private static CharSequence ¤¤doorNo = "Walls close the room in. Place a doorway on its edge.";
+	private static CharSequence ¤¤warnings = "Warnings";
+	private static CharSequence ¤¤support = "Weak support (yellow tiles): costs more to build and maintain. Make the room thinner, or use Shrink Room to leave pillars inside it.";
+	private static CharSequence ¤¤isolation = "Insulation";
+	private static CharSequence ¤¤isolationLow = "Poor insulation raises maintenance. Build walls and use few doorways.";
+
+	static {
+		D.ts(RoomChecklist.class);
+	}
+
+	private int problems;
+	private int warnings;
+
+	/**
+	 * Runs every check. With a box, also lists them in it.
+	 */
+	public void check(GBox b) {
+		problems = 0;
+		warnings = 0;
+		// looked up each time, the UI is made before the settlement
+		RoomPlacer p = SETT.ROOMS().placement.placer;
+		if (p.instance.blue == null)
+			return;
+		Furnisher f = p.blueprint().constructor();
+		AREA a = p.instance;
+
+		if (b != null)
+			b.title(¤¤title);
+
+		if (a.area() < 1) {
+			line(b, false, ¤¤noArea);
+			return;
+		}
+
+		CharSequence s = f.constructionProblem(a);
+		if (s != null)
+			line(b, false, s);
+
+		for (FurnisherItemGroup g : f.groups()) {
+			if (g.min <= 0)
+				continue;
+			int am = p.resources.groups(g);
+			boolean ok = am >= g.min;
+			if (!ok)
+				problems++;
+			if (b != null) {
+				icon(b, ok);
+				b.add(b.text().add(g.name()));
+				// a number only when it's short, to say how many
+				if (!ok) {
+					b.tab(7);
+					b.add(b.text().errorify().add(¤¤atLeast).s().add(g.min).s().add(¤¤needed));
+				}
+				b.NL();
+			}
+		}
+
+		for (int si = 0; si < f.stats().size(); si++) {
+			FurnisherStat st = f.stats().get(si);
+			if (st.min <= 0)
+				continue;
+			double v = p.itemStats(st.index());
+			boolean ok = v >= st.min;
+			if (!ok)
+				problems++;
+			if (b != null) {
+				icon(b, ok);
+				b.add(b.text().add(st.name()));
+				if (!ok) {
+					b.tab(7);
+					b.add(b.text().errorify().add(¤¤atLeast));
+					b.add(st.format(b.text(), st.min).errorify());
+					b.add(b.text().errorify().add(¤¤needed));
+				}
+				b.NL();
+			}
+		}
+
+		check(b, reachable(a), ¤¤reach, ¤¤reachNo);
+		check(b, connected(a), ¤¤connected, ¤¤connectedNo);
+		if (p.autoWalls.is())
+			check(b, p.door.createProblem() == null, ¤¤door, ¤¤doorNo);
+
+		// the game decides, so a check this list doesn't know about still shows up
+		CharSequence vanilla = p.createProblem();
+		if (problems == 0 && vanilla != null)
+			line(b, false, vanilla);
+
+		CharSequence warn = p.createWarning();
+		boolean weak = p.cost().support() > 0;
+		boolean iso = f.needsIsolation() && p.isolation() < 1;
+		if (warn != null || weak || iso) {
+			if (b != null) {
+				b.NL(8);
+				b.textLL(¤¤warnings);
+				b.NL();
+			}
+			if (warn != null)
+				warn(b, warn);
+			if (weak)
+				warn(b, ¤¤support);
+			if (iso) {
+				warnings++;
+				if (b != null) {
+					b.add(b.text().warnify().add(¤¤isolation));
+					b.tab(7);
+					b.add(GFORMAT.perc(b.text(), p.isolation()));
+					b.NL();
+					b.add(b.text().warnify().add(¤¤isolationLow));
+					b.NL();
+				}
+			}
+		}
+	}
+
+	/**
+	 * @return the requirements not met, as of the last {@link #check(GBox)}
+	 */
+	public int problems() {
+		return problems;
+	}
+
+	public int warnings() {
+		return warnings;
+	}
+
+	private void check(GBox b, boolean ok, CharSequence yes, CharSequence no) {
+		if (!ok)
+			problems++;
+		if (b == null)
+			return;
+		icon(b, ok);
+		b.add(b.text().add(yes));
+		b.NL();
+		if (!ok) {
+			b.add(b.text().errorify().add(no));
+			b.NL();
+		}
+	}
+
+	private void line(GBox b, boolean ok, CharSequence text) {
+		if (!ok)
+			problems++;
+		if (b == null)
+			return;
+		icon(b, ok);
+		GText t = b.text();
+		t.add(text);
+		if (!ok)
+			t.errorify();
+		b.add(t);
+		b.NL();
+	}
+
+	private void warn(GBox b, CharSequence text) {
+		warnings++;
+		if (b != null) {
+			b.add(b.text().warnify().add(text));
+			b.NL();
+		}
+	}
+
+	private static void icon(GBox b, boolean ok) {
+		if (ok)
+			b.add(UI.icons().s.allRight, GCOLOR.T().IGREAT);
+		else
+			b.add(UI.icons().s.cancel, GCOLOR.T().ERROR);
+	}
+
+	// same as UtilPlacability.checkAccess: a free tile of the room touches a walkable tile outside it
+	private static boolean reachable(AREA a) {
+		boolean allBlocked = true;
+		for (COORDINATE c : a.body()) {
+			if (!a.is(c))
+				continue;
+			boolean blocked = SETT.ROOMS().fData.availability.get(c).player < 0 || SETT.PATH().solidity.is(c);
+			allBlocked &= blocked;
+			if (blocked)
+				continue;
+			for (DIR d : DIR.ORTHO) {
+				if (!a.is(c, d) && SETT.ROOMS().fData.availability.get(c, d).player > 0 && !SETT.PATH().solidity.is(c, d))
+					return true;
+			}
+		}
+		return allBlocked;
+	}
+
+	// same as the fills in UtilPlacability.createProblem: every tile is reached from a free one, items block the way
+	private boolean connected(AREA a) {
+		GUTIL.filler().init(this);
+		boolean first = false;
+		for (COORDINATE c : a.body()) {
+			if (a.is(c) && !SETT.ROOMS().fData.blocking.is(c)) {
+				GUTIL.filler().fill(c);
+				first = true;
+				break;
+			}
+		}
+		if (!first) {
+			for (COORDINATE c : a.body()) {
+				if (a.is(c)) {
+					GUTIL.filler().fill(c);
+					break;
+				}
+			}
+		}
+		int am = a.area();
+		while (GUTIL.filler().hasMore()) {
+			COORDINATE c = GUTIL.filler().poll();
+			am--;
+			for (DIR d : DIR.ORTHO) {
+				if (!a.is(c, d))
+					continue;
+				if (!SETT.ROOMS().fData.blocking.is(c) || SETT.ROOMS().fData.blocking.is(c, d))
+					GUTIL.filler().fill(c, d);
+			}
+		}
+		GUTIL.filler().done();
+		return am <= 0;
+	}
+
+}
