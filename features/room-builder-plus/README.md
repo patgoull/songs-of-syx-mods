@@ -1,4 +1,4 @@
-# Room Builder Plus: move/copy items, redo and hotkeys in the room builder
+# Room Builder Plus: move/copy items, nudge rooms, redo and hotkeys in the room builder
 
 **Game version:** 0.71.44 · **Patch:** [`patches/room-builder-plus.patch`](../../patches/room-builder-plus.patch)
 
@@ -8,9 +8,12 @@ When planning a big room (e.g. a large laboratory) and you notice that 20 workst
 the only fix today is to remove them all and place them again one by one. The same goes for repeating a
 good layout across a room. The Room Copier and Blueprints only work on whole rooms.
 
+When the whole room is one tile off, there's no fix but to rebuild it: copying it one tile over with the Room
+Copier overlaps the original, so it can't be placed.
+
 ## What it adds
 
-A **Selection** row under the **items** header of the room construction panel: Move, Copy, Mirror ⇆, Mirror ⇅.
+A **Selection** row under the **items** header of the room construction panel: Move, Copy, Nudge room, Mirror ⇆, Mirror ⇅.
 The mirror buttons are greyed out until items are carried. The header's own -, +, rotate buttons (the tool buttons
 the game shows when placing an item type) also show while items are carried and then act on the whole selection;
 they're greyed out or hidden when the selection can't be resized or turned, like for a single item. It works the same for new
@@ -39,6 +42,12 @@ rooms and refurbishing, since both use the same placement code:
   with Ctrl on release, all inner walls come along. Walls follow the selection's rotate and mirror, keep their size on resize,
   and show as striped tiles. A wall can only go on room floor without items. Walls that touch the outer wall, even at
   a corner, aren't inner walls and can't be picked up.
+- **Nudge room** (four arrows icon, Ctrl+M): click the room to pick up all of it: floor, items, inner walls and
+  doorways. It follows the mouse, held at the tile that was clicked, so moving the mouse one tile moves the room one
+  tile. Click to drop. Rotate (R) and mirror (H / V) work on the whole room. The ghost shows the floor outline,
+  the items and the doorways; tiles that can't become room or items that don't fit there turn red, and the hover
+  says why. Right click puts the items back and returns to clicking a room. Only while planning a new room: when
+  refurbishing (a built room or a construction site) the button isn't shown, see Rules.
 - When the carried items are all of one type, that type is highlighted in the item list and becomes the current
   item, so placing goes on with it after the drop.
 
@@ -53,10 +62,11 @@ the button and pressing the assign hotkey key (Ctrl+H), or in the key settings.
 
 | Default | Key code | Action |
 |---|---|---|
-| Ctrl+Z | `ROOM_UNDO` | Undo, the same as the undo button in the bottom bar. While items are lifted it puts them back first |
+| Ctrl+Z | `ROOM_UNDO` | Undo, the same as the undo button in the bottom bar. While items or a room are lifted (moving, not copying) it only puts them back |
 | Ctrl+Y | `ROOM_REDO` | Redo, also a new button (right arrow) next to undo |
 | Ctrl+X | `ROOM_ITEMS_MOVE` | Move items (cut + paste in one go) |
 | Ctrl+C | `ROOM_ITEMS_COPY` | Copy items |
+| Ctrl+M | `ROOM_NUDGE` | Nudge room. Plain M (minimap) is a different key, the game matches Ctrl+M on its own |
 | Ctrl+Alt+X / Ctrl+Alt+C | (same keys, Alt held) | Move / copy items and inner walls. Alt isn't a binding of its own: the game resolves Ctrl+Alt+X to Ctrl+X, and the tool checks Alt when it starts |
 | R | (game's `ROTATE`) | Rotate the carried selection |
 | H | `ROOM_ITEMS_FLIP_H` | Mirror the carried selection left-right |
@@ -79,6 +89,20 @@ group oldest entry first, using the same calls as undo in the other direction (`
 `instance.set`/`clear`, door place/remove), and records it as a normal history step, so it can be undone again.
 Any new change clears the redo list, like in any editor. If a redo entry no longer fits (shouldn't happen, the
 room is back in the state it was in after the undo), redo stops and the list is cleared.
+
+**Vanilla fix in undo:** the room's item count per type (`UtilStats.groups`) is cached for the tick, but one undo
+removes and puts back items in the same tick. Putting an item back is checked with `itemProblem`, which includes the
+max per type, so with the stale count an item type at its max failed, and undo cleared the whole history halfway
+(floor back, items gone). This hit every undone move of such items. `popHistory` and `redo` now call
+`resources.updatee()` before that check (1 line added in vanilla `popHistory`).
+
+**Vanilla fix: a full history was wiped whole.** The room history holds 1024 entries. When it's full,
+`clearHistory(-1, historyFirst, 64)` is meant to drop the 64 oldest, but it returns `amount-1` on every level of its
+recursion instead of counting down, so it drops all of them, including the start of the step being recorded. An undo
+then reverts only the end of that step. With a room of ~700 tiles planned, one far room move (~750 entries) undid
+only a strip of the old floor. The method body is replaced (same signature and callers): it drops the oldest
+entries, at least `amount`, and whole steps, so no step is left half undone. Checked in game: the 735-entry step
+that planned the room was dropped, and four room moves of 720 to 788 entries each undid completely.
 
 ### Vanilla fix: the Remove toggle next to items
 
@@ -106,18 +130,38 @@ Two bugs made the item tool buttons (-, +, rotate, Remove) disappear and the Rem
   new wall that no longer fit (`itemPlacable` + `itemProblem`, as `PlacerArea.validateItems` does) are removed and refunded.
   A wall whose spot can't become room (`PLACEMENT.placable`, e.g. a built wall while "build on walls" is off) can't be
   moved, only copied: the hover says why. Copying a wall only cuts the new spot.
+- **Nudging the room** changes only the tiles that differ: the ones it gains are added like **Expand Room** does
+  (clearing job), the ones it leaves are removed like **Shrink Room** does. Doorways are removed and set again
+  around the new floor (where a wall can't be at the new spot, that doorway is left out), then the items are
+  placed. New floor is checked like Expand Room (`PLACEMENT.placable` + the room's own rule), and the items are
+  checked (`itemProblem`) against the floor where it will be, before anything changes.
+- **No nudge while refurbishing**, built room or construction site: walls and floor are terrain, not part of
+  the room, so a moved room leaves them behind as a skeleton of the old building, the same as demolishing it would.
+  The button isn't shown and Ctrl+M does nothing (`SItems`, `state.refurnishing`). Moving items inside a built
+  room still works. The drop code still refunds built floor and items like Shrink Room, in case it's ever allowed.
+- **One undo step per nudge**, so it must fit in the history: each tile the room gains and the one it leaves,
+  and each item and doorway, take 2 entries, and one step may use 960. The history holds 1024 and, when full,
+  drops its oldest steps (at least 64 entries, see the vanilla fix above), so a bigger step would lose its own first
+  entries and undo only part of the move. A nudge of a few
+  tiles is far below that. Carrying a big room far away (no overlap) isn't: the hover says "Too far for one nudge, it
+  wouldn't fit in the undo history. Drop it closer and nudge again." Up to 480 items.
+- **Why "nudge":** the room is recorded tile by tile, so how far it can go depends on its size: an empty 30x20 room
+  goes about 15-20 tiles, a 10x10 one anywhere. A far move would also push the earlier steps out of the undo history.
+  It's made for fixing a room that's a few tiles off. Moving rooms across the map would need a different kind of
+  history entry (one "moved by dx, dy, turned" entry, undone by running the move backwards), which is more for the
+  dev to review, so it's left out.
 - Only rooms with an area (the panel that has the items list).
 - Up to 256 items and 128 wall tiles per selection (the room history holds 1024 entries, 2 per moved item or wall tile).
 
-## Code changes (additive except the 6 lines noted)
+## Code changes (additive except the lines noted: 6, plus the `clearHistory` body)
 
 | File | Change |
 |---|---|
-| `settlement/room/main/placement/PlacerItemMove.java` | **New.** Selector (`PlacableMulti`) + floating selection (`PlacableFixed`), lift/drop/restore, history; inner walls found by a flood fill from outside the room's box |
-| `settlement/room/main/placement/RoomPlacer.java` | `mover` field; `mover.restore()` at the top of `init`, `create`, `popHistory`, `removeAllItems`, `removeArea`; `hasRedo`/`redo` |
+| `settlement/room/main/placement/PlacerItemMove.java` | **New.** Selector (`PlacableMulti`) + floating selection (`PlacableFixed`), lift/drop/restore, history; inner walls found by a flood fill from outside the room's box; room mode (`selectRoom`): floor and doorways carried too, items checked against a ghost `AREA` of the floor where it's dropped |
+| `settlement/room/main/placement/RoomPlacer.java` | `mover` field; `mover.restore()` at the top of `init`, `create`, `popHistory`, `removeAllItems`, `removeArea`; undo while moving only cancels the move (`mover.cancelMove()`); `hasRedo`/`redo` |
 | `view/sett/ui/room/construction/Config.java` | Right click while moving cancels instead of undoing; restore on tool switch and on panel close |
-| `view/sett/ui/room/construction/SItems.java` | The two buttons + Ctrl+X/Ctrl+C keys; item tool buttons kept while removing (3 conditions) |
-| `settlement/room/main/placement/UtilHistory.java` | Redo list, `hasRedo`, `redo` (additive) |
+| `view/sett/ui/room/construction/SItems.java` | The three buttons + Ctrl+X/Ctrl+C/Ctrl+M keys; item tool buttons kept while removing (3 conditions) |
+| `settlement/room/main/placement/UtilHistory.java` | Redo list, `hasRedo`, `redo`; recount items before putting one back in `popHistory`; `clearHistory` body replaced (it dropped the whole history) |
 | `view/sett/ui/room/construction/SFrame.java` | Undo button wrapped with the Ctrl+Z key (2 lines changed), redo button + Ctrl+Y |
 | `view/tool/ToolPlacer.java` | Remove toggle fix (1 line changed) |
 | `settlement/room/main/placement/PlacerItemArea.java` | Remove Item tool: Ctrl when releasing removes all items of the removed types (additive) |
@@ -156,6 +200,20 @@ New room:
 - [ ] Drop a pillar next to an item that can't touch walls → that item is removed; Ctrl+Z → pillar back, item back.
 - [ ] A notch cut into the outer wall, or a wall touching it at a corner → can't be picked up.
 
+Nudge room:
+- [ ] Plan a lab with items, a doorway and a pillar. Ctrl+M, click the room, move 1 tile, click → floor, items,
+  pillar and doorway all moved by one. Ctrl+Z once → all back. Ctrl+Y → moved again.
+- [ ] Move it onto another room, a mountain or the map edge → those tiles red, hover says why, click does nothing.
+- [ ] A mine onto tiles without ore (or a fishery off the water) → the item tiles turn red.
+- [ ] Ctrl+M, click, R → the whole room turns around the clicked tile; H → mirrored; drop → one undo step.
+- [ ] Pick up, right click → items back, room unchanged; right click again → item placing.
+- [ ] Pick up and drop at the same spot → nothing changes.
+- [ ] Pick up, move the mouse, Ctrl+Z before clicking → the room stays where it was, nothing else is undone. Click the
+  room again, drop it, Ctrl+Z → the whole room is back where it was.
+- [ ] A big room (e.g. 30x30) carried far away → "Too far for one nudge…". Nudge it 5 tiles at a time → works, each one undo step.
+- [ ] Construct after a move → the room is built at the new spot, doorways where they moved to.
+- [ ] Refurbish a built room, or click a construction site → no Nudge room button, Ctrl+M does nothing. Plan a new room → it's back.
+
 Refurbish:
 - [ ] Refurbish a built lab, move built workstations → they become construction sites again, resources partly refunded.
 - [ ] Pick up built items, close the panel (Esc / exit) → room is rebuilt with items where they were, still built.
@@ -168,6 +226,8 @@ Hotkeys and Remove fix:
 - [ ] Pick up items, Ctrl+Z → items back, selecting again.
 - [ ] Place items, expand the area, add a door, then Ctrl+Z three times and Ctrl+Y three times → back to the same room. The redo button greys out at the end.
 - [ ] Move a selection, Ctrl+Z, Ctrl+Y → moved again (one step). Ctrl+Z, then place an item → redo greys out.
+- [ ] Place an item type up to its max, move them all (Ctrl+X or Nudge room), Ctrl+Z → all back; Ctrl+Y → moved again.
+- [ ] Plan a ~700-tile room in one drag, nudge it as far as it goes, drop, Ctrl+Z → the whole room is back where it was.
 - [ ] While placing items, hold Left Shift → the -, +, rotate and Remove buttons stay visible.
 - [ ] Click Remove on, then off, then tap Left Shift → back to placing, not stuck in remove mode.
 

@@ -441,6 +441,8 @@ public final class RoomPlacer {
 	public boolean popHistory() {
 		if (instance.blue == null)
 			return false;
+		if (mover.cancelMove()) // GOUL: an undo while moving only cancels the move
+			return true;
 		mover.restore(); // GOUL: items being moved go back first
 		if (history.hasHistory()) {
 			history.popHistory();

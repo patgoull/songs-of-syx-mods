@@ -1,5 +1,7 @@
 package settlement.room.main.placement;
 
+import java.util.Arrays;
+
 import init.sprite.SPRITES;
 import settlement.main.SETT;
 import settlement.room.main.MapDataF;
@@ -17,6 +19,7 @@ import snake2d.util.datatypes.COORDINATE;
 import snake2d.util.datatypes.Coo;
 import snake2d.util.datatypes.DIR;
 import snake2d.util.datatypes.RECTANGLE;
+import snake2d.util.datatypes.Rec;
 import snake2d.util.misc.CLAMP;
 import snake2d.util.sprite.SPRITE;
 import snake2d.util.sprite.text.Str;
@@ -48,6 +51,12 @@ import view.tool.ToolConfig;
  * (pillars made with shrink room). Moving one is the same as expanding the room over the old spot and shrinking it
  * at the new one: the floor there is refunded, and items next to the new wall that no longer fit are removed.
  *
+ * Nudging the whole room ({@link #selectRoom(ToolConfig)}): a click on the room picks up its floor, items and doorways.
+ * Inner walls are holes in the floor, so they come along. A drop only touches the tiles that change: the ones the room
+ * leaves are shrunk away like the area placer does (floor refunded), the new ones are added, the doorways are set again
+ * around the new floor, then the items are placed. Items are checked against the floor where it would be dropped
+ * before anything changes.
+ *
  * A drop is one step in the room history, so a single undo reverts it.
  * Built items that are moved are refunded and must be built again, same as removing and placing them by hand.
  */
@@ -73,6 +82,11 @@ public final class PlacerItemMove {
 	private static CharSequence ¤¤overlap = "Items overlap each other.";
 	private static CharSequence ¤¤wallFloor = "Walls must go on room floor without items.";
 	private static CharSequence ¤¤wallStuck = "The wall can't become room, copy it instead:";
+	private static CharSequence ¤¤nudge = "Nudge room";
+	private static CharSequence ¤¤nudgeDesc = "Click the room to pick it up with its items and doorways, shift it a few tiles, then click to drop it. Right click to cancel.";
+	private static CharSequence ¤¤doors = "doorways";
+	private static CharSequence ¤¤tooFar = "Too far for one nudge, it wouldn't fit in the undo history. Drop it closer and nudge again.";
+	private static CharSequence ¤¤tooMany = "Too many items to move at once.";
 
 	static {
 		D.ts(PlacerItemMove.class);
@@ -82,6 +96,11 @@ public final class PlacerItemMove {
 	private static final int MAX = 256;
 	// two history entries per moved wall tile
 	private static final int MAXW = 128;
+	// history entries one room move may use: the history holds 1024 and, when full, drops its oldest steps, at least
+	// 64 entries. A bigger step would lose its own first entries and only be undone in part
+	private static final int HISTORY = 960;
+	// items a room move can carry, two history entries each
+	private static final int ITEMS = HISTORY/2;
 
 	private static final int ROTATE = 0;
 	private static final int FLIP_X = 1;
@@ -92,17 +111,37 @@ public final class PlacerItemMove {
 	private final RoomPlacer p;
 
 	// the items as they were picked up: put back, history removals and refunds use these
-	private final FurnisherItem[] items = new FurnisherItem[MAX];
-	private final int[] ox = new int[MAX];
-	private final int[] oy = new int[MAX];
-	private final boolean[] built = new boolean[MAX];
+	private final FurnisherItem[] items = new FurnisherItem[ITEMS];
+	private final int[] ox = new int[ITEMS];
+	private final int[] oy = new int[ITEMS];
+	private final boolean[] built = new boolean[ITEMS];
+	private final boolean[] dropOk = new boolean[ITEMS];
 	private int am = 0;
 
 	// what gets placed at offset 0: the same items, unless the selection was rotated or flipped
-	private final FurnisherItem[] pit = new FurnisherItem[MAX];
-	private final int[] px = new int[MAX];
-	private final int[] py = new int[MAX];
-	private final FurnisherItem[] tmp = new FurnisherItem[MAX];
+	private final FurnisherItem[] pit = new FurnisherItem[ITEMS];
+	private final int[] px = new int[ITEMS];
+	private final int[] py = new int[ITEMS];
+	private final FurnisherItem[] tmp = new FurnisherItem[ITEMS];
+
+	// moving the whole room: its floor tiles and doorways, as picked up and where they go at offset 0
+	private boolean room;
+	private int[] ax = new int[0];
+	private int[] ay = new int[0];
+	private int[] pax = new int[0];
+	private int[] pay = new int[0];
+	private boolean[] aNew = new boolean[0];
+	private boolean[] aGone = new boolean[0];
+	private int aAm;
+	private int[] doorX = new int[0];
+	private int[] doorY = new int[0];
+	private int[] pdoorX = new int[0];
+	private int[] pdoorY = new int[0];
+	private boolean[] dOff = new boolean[0];
+	private boolean[] dOn = new boolean[0];
+	private int dAm;
+	// the room has more items than a move can carry
+	private boolean tooMany;
 
 	// inner wall tiles, as picked up and where they go at offset 0
 	private final int[] wx = new int[MAXW];
@@ -146,10 +185,13 @@ public final class PlacerItemMove {
 	private int anchorX, anchorY;
 	private int halfW, halfH;
 	private int offX, offY;
-	// per tile of the floating box: the item (index) or wall tile (MAX + index) on it, -1 if none
+	// per tile of the floating box: the item (index) or wall tile (ITEMS + index) on it, -1 if none
 	private int[] grid = new int[0];
 	// tiles where two carried items overlap, after a resize
 	private boolean[] gridOverlap = new boolean[0];
+	// per tile of the floating box, when moving the room: floor, doorway
+	private boolean[] gridFloor = new boolean[0];
+	private boolean[] gridDoor = new boolean[0];
 	private boolean overlaps;
 
 	private boolean dirty = true;
@@ -171,9 +213,25 @@ public final class PlacerItemMove {
 		restore();
 		this.copy = copy;
 		this.config = config;
+		room = false;
 		withWalls = altDown();
-		am = 0;
-		wAm = 0;
+		clearSelection();
+		pending = null;
+		return selector;
+	}
+
+	/**
+	 * Only for new rooms, the panel hides it while refurbishing: what's already built (walls, floor) is terrain the
+	 * room doesn't take along, so it would stay behind.
+	 * @return the placable to activate to pick up the whole room
+	 */
+	public PLACABLE selectRoom(ToolConfig config) {
+		restore();
+		copy = false;
+		this.config = config;
+		room = true;
+		withWalls = false;
+		clearSelection();
 		pending = null;
 		return selector;
 	}
@@ -184,14 +242,29 @@ public final class PlacerItemMove {
 	}
 
 	public boolean isCurrent(boolean copy) {
-		return isCurrent() && this.copy == copy;
+		return isCurrent() && !room && this.copy == copy;
+	}
+
+	public boolean isCurrentRoom() {
+		return isCurrent() && room;
 	}
 
 	/**
 	 * @return true while selected items follow the mouse
 	 */
 	public boolean isCarrying() {
-		return VIEW.s().tools.placer.getCurrent() == floater && am + wAm > 0;
+		return VIEW.s().tools.placer.getCurrent() == floater && carried() > 0;
+	}
+
+	private int carried() {
+		return am + wAm + aAm;
+	}
+
+	private void clearSelection() {
+		am = 0;
+		wAm = 0;
+		aAm = 0;
+		dAm = 0;
 	}
 
 	/**
@@ -212,7 +285,7 @@ public final class PlacerItemMove {
 	 * @return the item type of the carried items, null if no item is carried or they're of different types
 	 */
 	public FurnisherItemGroup carriedGroup() {
-		if (!isCarrying() || am == 0)
+		if (!isCarrying() || am == 0 || room)
 			return null;
 		FurnisherItemGroup g = pit[0].group;
 		for (int k = 1; k < am; k++)
@@ -223,7 +296,7 @@ public final class PlacerItemMove {
 
 	// gives every carried item the next size up or down of its type, keeping it centred
 	private void resize(boolean bigger) {
-		if (isCarrying())
+		if (isCarrying() && !room)
 			transform(bigger ? GROW : SHRINK);
 	}
 
@@ -243,10 +316,20 @@ public final class PlacerItemMove {
 		if (VIEW.s().tools.placer.getCurrent() != floater)
 			return false;
 		restore();
-		am = 0;
-		wAm = 0;
+		clearSelection();
 		VIEW.s().tools.place(selector, config);
 		return true;
+	}
+
+	/**
+	 * Undo while moving: puts what's lifted back and goes back to selecting, without undoing the step before.
+	 * Copies aren't lifted, so an undo while copying still removes the last stamp.
+	 * @return false if nothing is lifted
+	 */
+	public boolean cancelMove() {
+		if (!lifted)
+			return false;
+		return cancel();
 	}
 
 	/**
@@ -268,8 +351,7 @@ public final class PlacerItemMove {
 			else
 				LOG.err("item mover: could not put back " + items[k].group.name() + " at " + ox[k] + " " + oy[k]);
 		}
-		am = 0;
-		wAm = 0;
+		clearSelection();
 		p.resources.updatee();
 	}
 
@@ -442,8 +524,8 @@ public final class PlacerItemMove {
 		}
 	}
 
-	// @return why the wall tile can't become room
-	private CharSequence wallStuck(int tx, int ty) {
+	// @return why the tile can't become room, what the area placer checks
+	private CharSequence cantBeRoom(int tx, int ty) {
 		CharSequence s = PLACEMENT.placable(tx, ty, p.blueprint(), p.buildOnWalls.is());
 		if (s != null)
 			return s;
@@ -456,6 +538,97 @@ public final class PlacerItemMove {
 			return ¤¤wallFloor;
 		return null;
 	}
+
+	// picks up the whole room: every floor tile, item and doorway
+	private void collectRoom() {
+		clearSelection();
+		tooMany = false;
+		int n = p.instance.area();
+		if (ax.length < n) {
+			ax = new int[n];
+			ay = new int[n];
+			pax = new int[n];
+			pay = new int[n];
+			aNew = new boolean[n];
+			aGone = new boolean[n];
+		}
+		MapDataF d = SETT.ROOMS().fData;
+		RECTANGLE b = p.instance.body();
+		// one wider on each side, for the doorways
+		for (int y = b.y1()-1; y <= b.y2(); y++) {
+			for (int x = b.x1()-1; x <= b.x2(); x++) {
+				if (p.instance.is(x, y)) {
+					if (aAm < ax.length) {
+						ax[aAm] = x;
+						ay[aAm] = y;
+						aAm++;
+					}
+					if (d.isMaster.is(x, y) && d.item.get(x, y) != null) {
+						if (am < ITEMS)
+							add(x, y);
+						else
+							tooMany = true;
+					}
+				}else if (isDoor(x, y)) {
+					addDoor(x, y);
+				}
+			}
+		}
+	}
+
+	private void addDoor(int x, int y) {
+		if (dAm >= doorX.length) {
+			int n = Math.max(32, doorX.length*2);
+			doorX = Arrays.copyOf(doorX, n);
+			doorY = Arrays.copyOf(doorY, n);
+			pdoorX = new int[n];
+			pdoorY = new int[n];
+			dOff = new boolean[n];
+			dOn = new boolean[n];
+		}
+		doorX[dAm] = x;
+		doorY[dAm] = y;
+		dAm++;
+	}
+
+	// a doorway is a tile next to the room, marked on the first room tile around it (PlacerDoor.isOpening)
+	private boolean isDoor(int tx, int ty) {
+		for (int i = 0; i < DIR.ALL.size(); i++) {
+			DIR d = DIR.ALL.get(i);
+			int x = tx+d.x();
+			int y = ty+d.y();
+			if (p.instance.is(x, y)) {
+				int m = d.isOrtho() ? d.mask() : (d.mask()<<4);
+				return (ConstructionData.dWall.get(x, y) & m) != 0;
+			}
+		}
+		return false;
+	}
+
+	// the room's floor where it would be dropped, to check the carried items against
+	private final Rec ghostBody = new Rec();
+	private final AREA ghost = new AREA() {
+
+		@Override
+		public RECTANGLE body() {
+			return ghostBody.setWidth(halfW*2+1).setHeight(halfH*2+1).moveX1Y1(anchorX+offX-halfW, anchorY+offY-halfH);
+		}
+
+		@Override
+		public boolean is(int tile) {
+			return is(tile%SETT.TWIDTH, tile/SETT.TWIDTH);
+		}
+
+		@Override
+		public boolean is(int tx, int ty) {
+			return floorAt(tx-anchorX-offX+halfW, ty-anchorY-offY+halfH);
+		}
+
+		@Override
+		public int area() {
+			return aAm;
+		}
+	};
 
 	private void pickUp(int mx, int my) {
 		int x1 = Integer.MAX_VALUE;
@@ -479,6 +652,18 @@ public final class PlacerItemMove {
 			pwx[k] = wx[k];
 			pwy[k] = wy[k];
 		}
+		for (int k = 0; k < aAm; k++) {
+			x1 = Math.min(x1, ax[k]);
+			y1 = Math.min(y1, ay[k]);
+			x2 = Math.max(x2, ax[k]);
+			y2 = Math.max(y2, ay[k]);
+			pax[k] = ax[k];
+			pay[k] = ay[k];
+		}
+		for (int k = 0; k < dAm; k++) {
+			pdoorX[k] = doorX[k];
+			pdoorY[k] = doorY[k];
+		}
 		// the selection is held at the tile of it closest to the mouse, so dragging past the items doesn't
 		// leave them far from the cursor
 		anchorX = CLAMP.i(mx, x1, x2);
@@ -491,7 +676,7 @@ public final class PlacerItemMove {
 				SETT.ROOMS().fData.itemClear(ox[k]+items[k].firstX(), oy[k]+items[k].firstY(), p.instance);
 			// the walls' spots become room while carried, so items can be dropped there
 			for (int k = 0; k < wAm && !wStuck; k++) {
-				CharSequence s = wallStuck(wx[k], wy[k]);
+				CharSequence s = cantBeRoom(wx[k], wy[k]);
 				if (s != null) {
 					stuck.clear().add(¤¤wallStuck).s().add(s);
 					wStuck = true;
@@ -525,6 +710,14 @@ public final class PlacerItemMove {
 			halfW = Math.max(halfW, Math.abs(pwx[k]-anchorX));
 			halfH = Math.max(halfH, Math.abs(pwy[k]-anchorY));
 		}
+		for (int k = 0; k < aAm; k++) {
+			halfW = Math.max(halfW, Math.abs(pax[k]-anchorX));
+			halfH = Math.max(halfH, Math.abs(pay[k]-anchorY));
+		}
+		for (int k = 0; k < dAm; k++) {
+			halfW = Math.max(halfW, Math.abs(pdoorX[k]-anchorX));
+			halfH = Math.max(halfH, Math.abs(pdoorY[k]-anchorY));
+		}
 
 		for (int op = ROTATE; op <= SHRINK; op++) {
 			blocked[op] = null;
@@ -538,10 +731,14 @@ public final class PlacerItemMove {
 		if (grid.length < w*h) {
 			grid = new int[w*h];
 			gridOverlap = new boolean[w*h];
+			gridFloor = new boolean[w*h];
+			gridDoor = new boolean[w*h];
 		}
 		for (int i = 0; i < w*h; i++) {
 			grid[i] = -1;
 			gridOverlap[i] = false;
+			gridFloor[i] = false;
+			gridDoor[i] = false;
 		}
 		overlaps = false;
 		for (int k = 0; k < am; k++) {
@@ -555,7 +752,11 @@ public final class PlacerItemMove {
 			}
 		}
 		for (int k = 0; k < wAm; k++)
-			mark(pwx[k]-anchorX+halfW + (pwy[k]-anchorY+halfH)*w, MAX+k);
+			mark(pwx[k]-anchorX+halfW + (pwy[k]-anchorY+halfH)*w, ITEMS+k);
+		for (int k = 0; k < aAm; k++)
+			gridFloor[pax[k]-anchorX+halfW + (pay[k]-anchorY+halfH)*w] = true;
+		for (int k = 0; k < dAm; k++)
+			gridDoor[pdoorX[k]-anchorX+halfW + (pdoorY[k]-anchorY+halfH)*w] = true;
 	}
 
 	private void mark(int i, int value) {
@@ -575,6 +776,10 @@ public final class PlacerItemMove {
 		return py[k]-anchorY+halfH;
 	}
 
+	private boolean inBox(int rx, int ry) {
+		return rx >= 0 && ry >= 0 && rx < halfW*2+1 && ry < halfH*2+1;
+	}
+
 	private int gridAt(int rx, int ry) {
 		int w = halfW*2+1;
 		if (rx < 0 || ry < 0 || rx >= w || ry >= halfH*2+1)
@@ -589,13 +794,21 @@ public final class PlacerItemMove {
 
 	private int wallAt(int rx, int ry) {
 		int k = gridAt(rx, ry);
-		return k >= MAX ? k-MAX : -1;
+		return k >= ITEMS ? k-ITEMS : -1;
+	}
+
+	private boolean floorAt(int rx, int ry) {
+		return inBox(rx, ry) && gridFloor[rx+ry*(halfW*2+1)];
+	}
+
+	private boolean doorAt(int rx, int ry) {
+		return inBox(rx, ry) && gridDoor[rx+ry*(halfW*2+1)];
 	}
 
 	/**
 	 * Rotates (90° clockwise) or mirrors the selection around the anchor. Every item is swapped for the
 	 * variant of its group whose tiles match the turned item. If one has no such variant, nothing changes.
-	 * Walls turn with the selection and keep their size.
+	 * Walls, and the floor and doorways of a moved room, turn with the selection and keep their size.
 	 */
 	private void transform(int op) {
 		for (int k = 0; k < am; k++) {
@@ -625,21 +838,28 @@ public final class PlacerItemMove {
 			}
 			pit[k] = tmp[k];
 		}
-		for (int k = 0; k < wAm; k++) {
-			int x1 = pwx[k]-anchorX;
-			int y1 = pwy[k]-anchorY;
-			if (op == ROTATE) {
-				pwx[k] = anchorX-y1;
-				pwy[k] = anchorY+x1;
-			}else if (op == FLIP_X) {
-				pwx[k] = anchorX-x1;
-			}else if (op == FLIP_Y) {
-				pwy[k] = anchorY-y1;
-			}
-		}
+		turn(pwx, pwy, wAm, op);
+		turn(pax, pay, aAm, op);
+		turn(pdoorX, pdoorY, dAm, op);
 		noteUntil = 0;
 		buildGrid();
 		dirty = true;
+	}
+
+	// turns single tiles around the anchor
+	private void turn(int[] xs, int[] ys, int n, int op) {
+		for (int k = 0; k < n; k++) {
+			int x1 = xs[k]-anchorX;
+			int y1 = ys[k]-anchorY;
+			if (op == ROTATE) {
+				xs[k] = anchorX-y1;
+				ys[k] = anchorY+x1;
+			}else if (op == FLIP_X) {
+				xs[k] = anchorX-x1;
+			}else if (op == FLIP_Y) {
+				ys[k] = anchorY-y1;
+			}
+		}
 	}
 
 	private static FurnisherItem turned(FurnisherItem it, int op) {
@@ -693,6 +913,9 @@ public final class PlacerItemMove {
 		for (int k = 0; k < wAm; k++)
 			if (pwx[k] != wx[k] || pwy[k] != wy[k])
 				return false;
+		for (int k = 0; k < aAm; k++)
+			if (pax[k] != ax[k] || pay[k] != ay[k])
+				return false;
 		return true;
 	}
 
@@ -704,6 +927,11 @@ public final class PlacerItemMove {
 
 		if (overlaps) {
 			problem = ¤¤overlap;
+			return problem;
+		}
+
+		if (room) {
+			problem = roomProblem();
 			return problem;
 		}
 
@@ -743,11 +971,42 @@ public final class PlacerItemMove {
 		return problem;
 	}
 
+	// the new floor must be able to become room, the items must fit on it and the move must fit in one history step
+	private CharSequence roomProblem() {
+		if (tooMany)
+			return ¤¤tooMany;
+		int added = 0;
+		for (int k = 0; k < aAm; k++) {
+			int x = pax[k]+offX;
+			int y = pay[k]+offY;
+			if (p.instance.is(x, y))
+				continue;
+			added++;
+			CharSequence s = cantBeRoom(x, y);
+			if (s != null)
+				return s;
+		}
+		// the room leaves as many tiles as it gains, each item and doorway is removed and placed
+		if (2*(added + am + dAm) > HISTORY)
+			return ¤¤tooFar;
+		for (int k = 0; k < am; k++) {
+			CharSequence s = p.placability.itemProblem(px[k]+offX, py[k]+offY, pit[k].group, pit[k], ghost);
+			if (s != null)
+				return s;
+		}
+		return null;
+	}
+
 	private void drop() {
 
 		if (!copy && unchanged()) {
 			restore();
 			pending = selector;
+			return;
+		}
+
+		if (room) {
+			dropRoom();
 			return;
 		}
 
@@ -847,6 +1106,89 @@ public final class PlacerItemMove {
 		}
 	}
 
+	// moves the floor, the doorways and the items, all checked by roomProblem against the floor where it's dropped
+	private void dropRoom() {
+		MapDataF d = SETT.ROOMS().fData;
+		for (int k = 0; k < am; k++)
+			if (built[k])
+				setBuilt(k, 0);
+
+		// doorways come off while the floor is where they were, and are set again around the new floor
+		for (int k = 0; k < dAm; k++)
+			dOff[k] = p.door.removeWithoutHistory(doorX[k], doorY[k]);
+
+		// the new floor first, so the room is never empty. Floor that stays keeps what's built on it
+		for (int k = 0; k < aAm; k++) {
+			int x = pax[k]+offX;
+			int y = pay[k]+offY;
+			aNew[k] = !p.instance.is(x, y);
+			if (aNew[k]) {
+				// what the area placer does when it expands the room
+				SETT.JOBS().clearer.set(x, y);
+				p.instance.set(x, y);
+				SETT.ROOMS().data.set(p.instance, x, y, 0);
+			}
+		}
+		for (int k = 0; k < aAm; k++) {
+			int x = ax[k];
+			int y = ay[k];
+			aGone[k] = !ghost.is(x, y);
+			if (!aGone[k])
+				continue;
+			// and when it shrinks it
+			if (ConstructionData.dFloored.is(x, y, 1)) {
+				p.resources.removeTile(x, y);
+				SETT.FLOOR().clearer.clear(x, y);
+			}
+			SETT.MAINTENANCE().isser.is(x, y);
+			p.instance.clear(x, y);
+		}
+
+		for (int k = 0; k < dAm; k++)
+			dOn[k] = p.door.placeWithoutHistory(pdoorX[k]+offX, pdoorY[k]+offY);
+
+		for (int k = 0; k < am; k++) {
+			int x = px[k]+offX;
+			int y = py[k]+offY;
+			dropOk[k] = fitsNow(x, y, pit[k]) == null;
+			if (dropOk[k]) {
+				d.itemSet(x, y, pit[k], p.instance);
+				p.resources.updatee();
+			}else {
+				// shouldn't happen, it was checked. It's left out, an undo brings it back
+				LOG.err("room mover: " + pit[k].group.name() + " doesn't fit at " + x + " " + y);
+			}
+		}
+
+		// undo goes newest first: the dropped items, the new doorways, the floor, the old doorways, then the
+		// items come back where they were
+		for (int k = 0; k < am; k++)
+			p.history.placeItem(items[k], ox[k], oy[k], -1);
+		for (int k = 0; k < am; k++)
+			if (built[k])
+				p.resources.removeItem(ox[k], oy[k], items[k]);
+		for (int k = 0; k < dAm; k++)
+			if (dOff[k])
+				p.history.placeDoor(doorX[k], doorY[k], -1);
+		for (int k = 0; k < aAm; k++)
+			if (aNew[k])
+				p.history.placeEmbryo(pax[k]+offX, pay[k]+offY, 1);
+		for (int k = 0; k < aAm; k++)
+			if (aGone[k])
+				p.history.placeEmbryo(ax[k], ay[k], -1);
+		for (int k = 0; k < dAm; k++)
+			if (dOn[k])
+				p.history.placeDoor(pdoorX[k]+offX, pdoorY[k]+offY, 1);
+		for (int k = 0; k < am; k++)
+			if (dropOk[k])
+				p.history.placeItem(pit[k], px[k]+offX, py[k]+offY, 1);
+		p.resources.updatee();
+		scanDirty = true;
+		lifted = false;
+		clearSelection();
+		pending = selector;
+	}
+
 	// items around a new wall that don't fit any more are removed, like the area placer does
 	private void validateItems(int tx, int ty) {
 		MapDataF d = SETT.ROOMS().fData;
@@ -909,6 +1251,8 @@ public final class PlacerItemMove {
 	private final class Selector extends PlacableMulti {
 
 		private final Str hint = new Str(256);
+		// moving the room: the drag touched it
+		private boolean hit;
 
 		Selector(){
 			super(¤¤select, ¤¤selectDesc, null);
@@ -916,6 +1260,8 @@ public final class PlacerItemMove {
 
 		@Override
 		public CharSequence isPlacable(int tx, int ty, AREA area, PLACER_TYPE type) {
+			if (room)
+				return p.instance.is(tx, ty) ? null : PlacableMessages.¤¤ROOM_MUST;
 			scan();
 			if (wall(tx, ty) >= 0)
 				return null;
@@ -926,6 +1272,8 @@ public final class PlacerItemMove {
 
 		@Override
 		public boolean expandsTo(int fromX, int fromY, int toX, int toY) {
+			if (room)
+				return p.instance.is(fromX, fromY) && p.instance.is(toX, toY);
 			int w = wall(fromX, fromY);
 			if (w >= 0)
 				return wall(toX, toY) == w;
@@ -947,14 +1295,18 @@ public final class PlacerItemMove {
 
 		@Override
 		public void finishChecking(AREA placedArea) {
-			am = 0;
-			wAm = 0;
+			clearSelection();
+			hit = false;
 			for (int i = 0; i < wallSel.length; i++)
 				wallSel[i] = false;
 		}
 
 		@Override
 		public void place(int tx, int ty, AREA area, PLACER_TYPE type) {
+			if (room) {
+				hit = true;
+				return;
+			}
 			int w = wall(tx, ty);
 			if (w >= 0) {
 				addWall(w);
@@ -967,9 +1319,13 @@ public final class PlacerItemMove {
 
 		@Override
 		public void finishPlacing(AREA placedArea) {
-			if (am + wAm > 0 && KEYS.MAIN().MOD.isPressed())
+			if (room) {
+				if (hit)
+					collectRoom();
+			}else if (am + wAm > 0 && KEYS.MAIN().MOD.isPressed()) {
 				addSameTypes();
-			if (am + wAm > 0)
+			}
+			if (carried() > 0)
 				pending = floater;
 		}
 
@@ -985,6 +1341,8 @@ public final class PlacerItemMove {
 		@Override
 		public void placeInfo(GBox b, int oktiles, AREA a) {
 			super.placeInfo(b, oktiles, a);
+			if (room)
+				return;
 			b.NL();
 			b.text(hint.clear().add(¤¤allOfType).insert(0, KEYS.MAIN().MOD.repr()));
 			if (!withWalls) {
@@ -995,6 +1353,11 @@ public final class PlacerItemMove {
 
 		@Override
 		public void hoverDesc(GBox box) {
+			if (room) {
+				box.title(¤¤nudge);
+				box.text(¤¤nudgeDesc);
+				return;
+			}
 			box.title(copy ? ¤¤copy : ¤¤move);
 			box.text(hint.clear().add(¤¤selectDesc).insert(0, KEYS.MAIN().MOD.repr()).insert(0, KEYS.MAIN().MOD.repr()));
 		}
@@ -1007,7 +1370,7 @@ public final class PlacerItemMove {
 
 		@Override
 		public CharSequence name() {
-			return copy ? ¤¤copy : ¤¤move;
+			return room ? ¤¤nudge : copy ? ¤¤copy : ¤¤move;
 		}
 
 		@Override
@@ -1038,14 +1401,14 @@ public final class PlacerItemMove {
 		// The tool's -/+ buttons and grow / shrink keys (Q / E, Ctrl + wheel) work on a size index. The selection
 		// says it has a size below the current one if all items can shrink, and one above if all can grow, so the
 		// buttons are greyed (or hidden) like for a single item. A step off sizeBase() resizes the selection
-		// (sizeSet is final, so it's read back in updateRegardless). Walls alone have no sizes
+		// (sizeSet is final, so it's read back in updateRegardless). Walls alone and a moved room have no sizes
 		@Override
 		public int sizes() {
-			return sizeBase() + 1 + (am > 0 && blocked[GROW] == null ? 1 : 0);
+			return sizeBase() + 1 + (am > 0 && !room && blocked[GROW] == null ? 1 : 0);
 		}
 
 		int sizeBase() {
-			return am > 0 && blocked[SHRINK] == null ? 1 : 0;
+			return am > 0 && !room && blocked[SHRINK] == null ? 1 : 0;
 		}
 
 		@Override
@@ -1080,10 +1443,15 @@ public final class PlacerItemMove {
 				return ¤¤overlap;
 			if (wallAt(rx, ry) >= 0)
 				return wallProblem(tx, ty);
+			if (room && floorAt(rx, ry) && !p.instance.is(tx, ty)) {
+				CharSequence s = cantBeRoom(tx, ty);
+				if (s != null)
+					return s;
+			}
 			int k = itemAt(rx, ry);
 			if (k < 0)
 				return null;
-			return p.placability.itemPlacable(tx, ty, rx-rx(k), ry-ry(k), pit[k], p.instance);
+			return p.placability.itemPlacable(tx, ty, rx-rx(k), ry-ry(k), pit[k], room ? ghost : p.instance);
 		}
 
 		@Override
@@ -1104,10 +1472,9 @@ public final class PlacerItemMove {
 				sizeSet(sizeBase());
 			}
 			// also when the undo button put the lifted items back
-			if (pending == selector || am + wAm == 0) {
+			if (pending == selector || carried() == 0) {
 				pending = null;
-				am = 0;
-				wAm = 0;
+				clearSelection();
 				VIEW.s().tools.place(selector, config);
 			}
 		}
@@ -1119,15 +1486,26 @@ public final class PlacerItemMove {
 				SPRITES.cons().BIG.filled.render(r, 0, x, y);
 				return;
 			}
-			int k = itemAt(rx, ry);
-			if (k < 0)
+			if (doorAt(rx, ry)) {
+				SPRITES.cons().BIG.outline.render(r, 0, x, y);
 				return;
+			}
+			int k = itemAt(rx, ry);
+			FurnisherItemTile t = k < 0 ? null : pit[k].get(rx-rx(k), ry-ry(k));
+			if (t == null) {
+				// the floor of a moved room, outlined at its edge
+				if (floorAt(rx, ry)) {
+					int m = 0;
+					for (DIR dir : DIR.ORTHO)
+						if (floorAt(rx+dir.x(), ry+dir.y()))
+							m |= dir.mask();
+					SPRITES.cons().BIG.dashed.render(r, m, x, y);
+				}
+				return;
+			}
 			FurnisherItem it = pit[k];
 			int ix = rx-rx(k);
 			int iy = ry-ry(k);
-			FurnisherItemTile t = it.get(ix, iy);
-			if (t == null)
-				return;
 
 			if (t.mustBeReachable) {
 				SPRITES.cons().BIG.filled.render(r, 0, x, y);
@@ -1163,6 +1541,10 @@ public final class PlacerItemMove {
 				b.tab(4);
 				b.add(b.text().add(wAm).s().add(¤¤walls));
 			}
+			if (room) {
+				b.tab(4);
+				b.add(b.text().add(dAm).s().add(¤¤doors));
+			}
 			b.NL();
 			b.add(b.text().lablify().add(¤¤offset));
 			b.tab(4);
@@ -1170,8 +1552,10 @@ public final class PlacerItemMove {
 			b.NL();
 			b.add(b.text().add(¤¤rotate).s().add(KEYS.MAIN().ROTATE.repr()));
 			b.NL();
-			b.add(b.text().add(¤¤size).s().add(KEYS.MAIN().SHRINK.repr()).add(' ').add('/').add(' ').add(KEYS.MAIN().GROW.repr()));
-			b.NL();
+			if (!room) {
+				b.add(b.text().add(¤¤size).s().add(KEYS.MAIN().SHRINK.repr()).add(' ').add('/').add(' ').add(KEYS.MAIN().GROW.repr()));
+				b.NL();
+			}
 			b.text(¤¤cancel);
 			if (noteUntil > VIEW.renderSecond()) {
 				b.NL();

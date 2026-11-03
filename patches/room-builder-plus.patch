@@ -19,13 +19,13 @@ index 395afac..927d7eb 100644
 @@ -22,14 +24,47 @@ import view.tool.PlacableMulti;
  class PlacerItemArea extends PlacerItemSingle{
  
- 	private static CharSequence ¤¤undo = "¤Remove Item";
+ 	private static CharSequence ┬ñ┬ñundo = "┬ñRemove Item";
 +	private static CharSequence sAllOfType = "Hold {0} when releasing: all items of these types"; // GOUL: plain text, not in the dictionary yet
  	static {
  		D.ts(PlacerItemArea.class);
  	}
  	
- 	private final PlacableMulti undo = new PlacableMulti(¤¤undo) {
+ 	private final PlacableMulti undo = new PlacableMulti(┬ñ┬ñundo) {
  		
 +		// GOUL: with the mod key (Ctrl) held when releasing, every item of the removed types goes
 +		private final boolean[] removed = new boolean[64];
@@ -66,11 +66,13 @@ index 395afac..927d7eb 100644
  		
 diff --git a/settlement/room/main/placement/PlacerItemMove.java b/settlement/room/main/placement/PlacerItemMove.java
 new file mode 100644
-index 0000000..b4c5af2
+index 0000000..ae915dd
 --- /dev/null
 +++ b/settlement/room/main/placement/PlacerItemMove.java
-@@ -0,0 +1,1184 @@
+@@ -0,0 +1,1568 @@
 +package settlement.room.main.placement;
++
++import java.util.Arrays;
 +
 +import init.sprite.SPRITES;
 +import settlement.main.SETT;
@@ -89,6 +91,7 @@ index 0000000..b4c5af2
 +import snake2d.util.datatypes.Coo;
 +import snake2d.util.datatypes.DIR;
 +import snake2d.util.datatypes.RECTANGLE;
++import snake2d.util.datatypes.Rec;
 +import snake2d.util.misc.CLAMP;
 +import snake2d.util.sprite.SPRITE;
 +import snake2d.util.sprite.text.Str;
@@ -120,31 +123,42 @@ index 0000000..b4c5af2
 + * (pillars made with shrink room). Moving one is the same as expanding the room over the old spot and shrinking it
 + * at the new one: the floor there is refunded, and items next to the new wall that no longer fit are removed.
 + *
++ * Nudging the whole room ({@link #selectRoom(ToolConfig)}): a click on the room picks up its floor, items and doorways.
++ * Inner walls are holes in the floor, so they come along. A drop only touches the tiles that change: the ones the room
++ * leaves are shrunk away like the area placer does (floor refunded), the new ones are added, the doorways are set again
++ * around the new floor, then the items are placed. Items are checked against the floor where it would be dropped
++ * before anything changes.
++ *
 + * A drop is one step in the room history, so a single undo reverts it.
 + * Built items that are moved are refunded and must be built again, same as removing and placing them by hand.
 + */
 +public final class PlacerItemMove {
 +
-+	private static CharSequence ¤¤select = "Select items";
-+	private static CharSequence ¤¤selectDesc = "Drag a rectangle over the items to pick up. Hold {0} when releasing to also select all items of the same types in the room. Hold Alt to also pick up inner walls (all of them with {0}).";
-+	private static CharSequence ¤¤wallsHint = "Hold Alt: inner walls too";
-+	private static CharSequence ¤¤move = "Move items";
-+	private static CharSequence ¤¤copy = "Copy items";
-+	private static CharSequence ¤¤items = "items";
-+	private static CharSequence ¤¤walls = "wall tiles";
-+	private static CharSequence ¤¤offset = "Offset";
-+	private static CharSequence ¤¤allOfType = "Hold {0} when releasing: all items of these types";
-+	private static CharSequence ¤¤rotate = "Rotate:";
-+	private static CharSequence ¤¤cancel = "Right click to cancel.";
-+	private static CharSequence ¤¤maxReached = "Max amount of an item is reached.";
-+	private static CharSequence ¤¤cantRotate = "Can't be rotated:";
-+	private static CharSequence ¤¤cantFlip = "Can't be mirrored:";
-+	private static CharSequence ¤¤cantGrow = "No bigger size:";
-+	private static CharSequence ¤¤cantShrink = "No smaller size:";
-+	private static CharSequence ¤¤size = "Size:";
-+	private static CharSequence ¤¤overlap = "Items overlap each other.";
-+	private static CharSequence ¤¤wallFloor = "Walls must go on room floor without items.";
-+	private static CharSequence ¤¤wallStuck = "The wall can't become room, copy it instead:";
++	private static CharSequence ┬ñ┬ñselect = "Select items";
++	private static CharSequence ┬ñ┬ñselectDesc = "Drag a rectangle over the items to pick up. Hold {0} when releasing to also select all items of the same types in the room. Hold Alt to also pick up inner walls (all of them with {0}).";
++	private static CharSequence ┬ñ┬ñwallsHint = "Hold Alt: inner walls too";
++	private static CharSequence ┬ñ┬ñmove = "Move items";
++	private static CharSequence ┬ñ┬ñcopy = "Copy items";
++	private static CharSequence ┬ñ┬ñitems = "items";
++	private static CharSequence ┬ñ┬ñwalls = "wall tiles";
++	private static CharSequence ┬ñ┬ñoffset = "Offset";
++	private static CharSequence ┬ñ┬ñallOfType = "Hold {0} when releasing: all items of these types";
++	private static CharSequence ┬ñ┬ñrotate = "Rotate:";
++	private static CharSequence ┬ñ┬ñcancel = "Right click to cancel.";
++	private static CharSequence ┬ñ┬ñmaxReached = "Max amount of an item is reached.";
++	private static CharSequence ┬ñ┬ñcantRotate = "Can't be rotated:";
++	private static CharSequence ┬ñ┬ñcantFlip = "Can't be mirrored:";
++	private static CharSequence ┬ñ┬ñcantGrow = "No bigger size:";
++	private static CharSequence ┬ñ┬ñcantShrink = "No smaller size:";
++	private static CharSequence ┬ñ┬ñsize = "Size:";
++	private static CharSequence ┬ñ┬ñoverlap = "Items overlap each other.";
++	private static CharSequence ┬ñ┬ñwallFloor = "Walls must go on room floor without items.";
++	private static CharSequence ┬ñ┬ñwallStuck = "The wall can't become room, copy it instead:";
++	private static CharSequence ┬ñ┬ñnudge = "Nudge room";
++	private static CharSequence ┬ñ┬ñnudgeDesc = "Click the room to pick it up with its items and doorways, shift it a few tiles, then click to drop it. Right click to cancel.";
++	private static CharSequence ┬ñ┬ñdoors = "doorways";
++	private static CharSequence ┬ñ┬ñtooFar = "Too far for one nudge, it wouldn't fit in the undo history. Drop it closer and nudge again.";
++	private static CharSequence ┬ñ┬ñtooMany = "Too many items to move at once.";
 +
 +	static {
 +		D.ts(PlacerItemMove.class);
@@ -154,6 +168,11 @@ index 0000000..b4c5af2
 +	private static final int MAX = 256;
 +	// two history entries per moved wall tile
 +	private static final int MAXW = 128;
++	// history entries one room move may use: the history holds 1024 and, when full, drops its oldest steps, at least
++	// 64 entries. A bigger step would lose its own first entries and only be undone in part
++	private static final int HISTORY = 960;
++	// items a room move can carry, two history entries each
++	private static final int ITEMS = HISTORY/2;
 +
 +	private static final int ROTATE = 0;
 +	private static final int FLIP_X = 1;
@@ -164,17 +183,37 @@ index 0000000..b4c5af2
 +	private final RoomPlacer p;
 +
 +	// the items as they were picked up: put back, history removals and refunds use these
-+	private final FurnisherItem[] items = new FurnisherItem[MAX];
-+	private final int[] ox = new int[MAX];
-+	private final int[] oy = new int[MAX];
-+	private final boolean[] built = new boolean[MAX];
++	private final FurnisherItem[] items = new FurnisherItem[ITEMS];
++	private final int[] ox = new int[ITEMS];
++	private final int[] oy = new int[ITEMS];
++	private final boolean[] built = new boolean[ITEMS];
++	private final boolean[] dropOk = new boolean[ITEMS];
 +	private int am = 0;
 +
 +	// what gets placed at offset 0: the same items, unless the selection was rotated or flipped
-+	private final FurnisherItem[] pit = new FurnisherItem[MAX];
-+	private final int[] px = new int[MAX];
-+	private final int[] py = new int[MAX];
-+	private final FurnisherItem[] tmp = new FurnisherItem[MAX];
++	private final FurnisherItem[] pit = new FurnisherItem[ITEMS];
++	private final int[] px = new int[ITEMS];
++	private final int[] py = new int[ITEMS];
++	private final FurnisherItem[] tmp = new FurnisherItem[ITEMS];
++
++	// moving the whole room: its floor tiles and doorways, as picked up and where they go at offset 0
++	private boolean room;
++	private int[] ax = new int[0];
++	private int[] ay = new int[0];
++	private int[] pax = new int[0];
++	private int[] pay = new int[0];
++	private boolean[] aNew = new boolean[0];
++	private boolean[] aGone = new boolean[0];
++	private int aAm;
++	private int[] doorX = new int[0];
++	private int[] doorY = new int[0];
++	private int[] pdoorX = new int[0];
++	private int[] pdoorY = new int[0];
++	private boolean[] dOff = new boolean[0];
++	private boolean[] dOn = new boolean[0];
++	private int dAm;
++	// the room has more items than a move can carry
++	private boolean tooMany;
 +
 +	// inner wall tiles, as picked up and where they go at offset 0
 +	private final int[] wx = new int[MAXW];
@@ -218,10 +257,13 @@ index 0000000..b4c5af2
 +	private int anchorX, anchorY;
 +	private int halfW, halfH;
 +	private int offX, offY;
-+	// per tile of the floating box: the item (index) or wall tile (MAX + index) on it, -1 if none
++	// per tile of the floating box: the item (index) or wall tile (ITEMS + index) on it, -1 if none
 +	private int[] grid = new int[0];
 +	// tiles where two carried items overlap, after a resize
 +	private boolean[] gridOverlap = new boolean[0];
++	// per tile of the floating box, when moving the room: floor, doorway
++	private boolean[] gridFloor = new boolean[0];
++	private boolean[] gridDoor = new boolean[0];
 +	private boolean overlaps;
 +
 +	private boolean dirty = true;
@@ -243,9 +285,25 @@ index 0000000..b4c5af2
 +		restore();
 +		this.copy = copy;
 +		this.config = config;
++		room = false;
 +		withWalls = altDown();
-+		am = 0;
-+		wAm = 0;
++		clearSelection();
++		pending = null;
++		return selector;
++	}
++
++	/**
++	 * Only for new rooms, the panel hides it while refurbishing: what's already built (walls, floor) is terrain the
++	 * room doesn't take along, so it would stay behind.
++	 * @return the placable to activate to pick up the whole room
++	 */
++	public PLACABLE selectRoom(ToolConfig config) {
++		restore();
++		copy = false;
++		this.config = config;
++		room = true;
++		withWalls = false;
++		clearSelection();
 +		pending = null;
 +		return selector;
 +	}
@@ -256,14 +314,29 @@ index 0000000..b4c5af2
 +	}
 +
 +	public boolean isCurrent(boolean copy) {
-+		return isCurrent() && this.copy == copy;
++		return isCurrent() && !room && this.copy == copy;
++	}
++
++	public boolean isCurrentRoom() {
++		return isCurrent() && room;
 +	}
 +
 +	/**
 +	 * @return true while selected items follow the mouse
 +	 */
 +	public boolean isCarrying() {
-+		return VIEW.s().tools.placer.getCurrent() == floater && am + wAm > 0;
++		return VIEW.s().tools.placer.getCurrent() == floater && carried() > 0;
++	}
++
++	private int carried() {
++		return am + wAm + aAm;
++	}
++
++	private void clearSelection() {
++		am = 0;
++		wAm = 0;
++		aAm = 0;
++		dAm = 0;
 +	}
 +
 +	/**
@@ -276,7 +349,7 @@ index 0000000..b4c5af2
 +	private CharSequence cant(int op) {
 +		if (!isCarrying() || blocked[op] == null)
 +			return null;
-+		CharSequence s = op == ROTATE ? ¤¤cantRotate : op == GROW ? ¤¤cantGrow : op == SHRINK ? ¤¤cantShrink : ¤¤cantFlip;
++		CharSequence s = op == ROTATE ? ┬ñ┬ñcantRotate : op == GROW ? ┬ñ┬ñcantGrow : op == SHRINK ? ┬ñ┬ñcantShrink : ┬ñ┬ñcantFlip;
 +		return reason.clear().add(s).s().add(blocked[op].group.name());
 +	}
 +
@@ -284,7 +357,7 @@ index 0000000..b4c5af2
 +	 * @return the item type of the carried items, null if no item is carried or they're of different types
 +	 */
 +	public FurnisherItemGroup carriedGroup() {
-+		if (!isCarrying() || am == 0)
++		if (!isCarrying() || am == 0 || room)
 +			return null;
 +		FurnisherItemGroup g = pit[0].group;
 +		for (int k = 1; k < am; k++)
@@ -295,7 +368,7 @@ index 0000000..b4c5af2
 +
 +	// gives every carried item the next size up or down of its type, keeping it centred
 +	private void resize(boolean bigger) {
-+		if (isCarrying())
++		if (isCarrying() && !room)
 +			transform(bigger ? GROW : SHRINK);
 +	}
 +
@@ -315,10 +388,20 @@ index 0000000..b4c5af2
 +		if (VIEW.s().tools.placer.getCurrent() != floater)
 +			return false;
 +		restore();
-+		am = 0;
-+		wAm = 0;
++		clearSelection();
 +		VIEW.s().tools.place(selector, config);
 +		return true;
++	}
++
++	/**
++	 * Undo while moving: puts what's lifted back and goes back to selecting, without undoing the step before.
++	 * Copies aren't lifted, so an undo while copying still removes the last stamp.
++	 * @return false if nothing is lifted
++	 */
++	public boolean cancelMove() {
++		if (!lifted)
++			return false;
++		return cancel();
 +	}
 +
 +	/**
@@ -340,8 +423,7 @@ index 0000000..b4c5af2
 +			else
 +				LOG.err("item mover: could not put back " + items[k].group.name() + " at " + ox[k] + " " + oy[k]);
 +		}
-+		am = 0;
-+		wAm = 0;
++		clearSelection();
 +		p.resources.updatee();
 +	}
 +
@@ -514,8 +596,8 @@ index 0000000..b4c5af2
 +		}
 +	}
 +
-+	// @return why the wall tile can't become room
-+	private CharSequence wallStuck(int tx, int ty) {
++	// @return why the tile can't become room, what the area placer checks
++	private CharSequence cantBeRoom(int tx, int ty) {
 +		CharSequence s = PLACEMENT.placable(tx, ty, p.blueprint(), p.buildOnWalls.is());
 +		if (s != null)
 +			return s;
@@ -525,9 +607,100 @@ index 0000000..b4c5af2
 +	// @return why a wall can't go on the tile
 +	private CharSequence wallProblem(int tx, int ty) {
 +		if (!p.instance.is(tx, ty) || SETT.ROOMS().fData.tile.is(tx, ty))
-+			return ¤¤wallFloor;
++			return ┬ñ┬ñwallFloor;
 +		return null;
 +	}
++
++	// picks up the whole room: every floor tile, item and doorway
++	private void collectRoom() {
++		clearSelection();
++		tooMany = false;
++		int n = p.instance.area();
++		if (ax.length < n) {
++			ax = new int[n];
++			ay = new int[n];
++			pax = new int[n];
++			pay = new int[n];
++			aNew = new boolean[n];
++			aGone = new boolean[n];
++		}
++		MapDataF d = SETT.ROOMS().fData;
++		RECTANGLE b = p.instance.body();
++		// one wider on each side, for the doorways
++		for (int y = b.y1()-1; y <= b.y2(); y++) {
++			for (int x = b.x1()-1; x <= b.x2(); x++) {
++				if (p.instance.is(x, y)) {
++					if (aAm < ax.length) {
++						ax[aAm] = x;
++						ay[aAm] = y;
++						aAm++;
++					}
++					if (d.isMaster.is(x, y) && d.item.get(x, y) != null) {
++						if (am < ITEMS)
++							add(x, y);
++						else
++							tooMany = true;
++					}
++				}else if (isDoor(x, y)) {
++					addDoor(x, y);
++				}
++			}
++		}
++	}
++
++	private void addDoor(int x, int y) {
++		if (dAm >= doorX.length) {
++			int n = Math.max(32, doorX.length*2);
++			doorX = Arrays.copyOf(doorX, n);
++			doorY = Arrays.copyOf(doorY, n);
++			pdoorX = new int[n];
++			pdoorY = new int[n];
++			dOff = new boolean[n];
++			dOn = new boolean[n];
++		}
++		doorX[dAm] = x;
++		doorY[dAm] = y;
++		dAm++;
++	}
++
++	// a doorway is a tile next to the room, marked on the first room tile around it (PlacerDoor.isOpening)
++	private boolean isDoor(int tx, int ty) {
++		for (int i = 0; i < DIR.ALL.size(); i++) {
++			DIR d = DIR.ALL.get(i);
++			int x = tx+d.x();
++			int y = ty+d.y();
++			if (p.instance.is(x, y)) {
++				int m = d.isOrtho() ? d.mask() : (d.mask()<<4);
++				return (ConstructionData.dWall.get(x, y) & m) != 0;
++			}
++		}
++		return false;
++	}
++
++	// the room's floor where it would be dropped, to check the carried items against
++	private final Rec ghostBody = new Rec();
++	private final AREA ghost = new AREA() {
++
++		@Override
++		public RECTANGLE body() {
++			return ghostBody.setWidth(halfW*2+1).setHeight(halfH*2+1).moveX1Y1(anchorX+offX-halfW, anchorY+offY-halfH);
++		}
++
++		@Override
++		public boolean is(int tile) {
++			return is(tile%SETT.TWIDTH, tile/SETT.TWIDTH);
++		}
++
++		@Override
++		public boolean is(int tx, int ty) {
++			return floorAt(tx-anchorX-offX+halfW, ty-anchorY-offY+halfH);
++		}
++
++		@Override
++		public int area() {
++			return aAm;
++		}
++	};
 +
 +	private void pickUp(int mx, int my) {
 +		int x1 = Integer.MAX_VALUE;
@@ -551,6 +724,18 @@ index 0000000..b4c5af2
 +			pwx[k] = wx[k];
 +			pwy[k] = wy[k];
 +		}
++		for (int k = 0; k < aAm; k++) {
++			x1 = Math.min(x1, ax[k]);
++			y1 = Math.min(y1, ay[k]);
++			x2 = Math.max(x2, ax[k]);
++			y2 = Math.max(y2, ay[k]);
++			pax[k] = ax[k];
++			pay[k] = ay[k];
++		}
++		for (int k = 0; k < dAm; k++) {
++			pdoorX[k] = doorX[k];
++			pdoorY[k] = doorY[k];
++		}
 +		// the selection is held at the tile of it closest to the mouse, so dragging past the items doesn't
 +		// leave them far from the cursor
 +		anchorX = CLAMP.i(mx, x1, x2);
@@ -563,9 +748,9 @@ index 0000000..b4c5af2
 +				SETT.ROOMS().fData.itemClear(ox[k]+items[k].firstX(), oy[k]+items[k].firstY(), p.instance);
 +			// the walls' spots become room while carried, so items can be dropped there
 +			for (int k = 0; k < wAm && !wStuck; k++) {
-+				CharSequence s = wallStuck(wx[k], wy[k]);
++				CharSequence s = cantBeRoom(wx[k], wy[k]);
 +				if (s != null) {
-+					stuck.clear().add(¤¤wallStuck).s().add(s);
++					stuck.clear().add(┬ñ┬ñwallStuck).s().add(s);
 +					wStuck = true;
 +				}
 +			}
@@ -597,6 +782,14 @@ index 0000000..b4c5af2
 +			halfW = Math.max(halfW, Math.abs(pwx[k]-anchorX));
 +			halfH = Math.max(halfH, Math.abs(pwy[k]-anchorY));
 +		}
++		for (int k = 0; k < aAm; k++) {
++			halfW = Math.max(halfW, Math.abs(pax[k]-anchorX));
++			halfH = Math.max(halfH, Math.abs(pay[k]-anchorY));
++		}
++		for (int k = 0; k < dAm; k++) {
++			halfW = Math.max(halfW, Math.abs(pdoorX[k]-anchorX));
++			halfH = Math.max(halfH, Math.abs(pdoorY[k]-anchorY));
++		}
 +
 +		for (int op = ROTATE; op <= SHRINK; op++) {
 +			blocked[op] = null;
@@ -610,10 +803,14 @@ index 0000000..b4c5af2
 +		if (grid.length < w*h) {
 +			grid = new int[w*h];
 +			gridOverlap = new boolean[w*h];
++			gridFloor = new boolean[w*h];
++			gridDoor = new boolean[w*h];
 +		}
 +		for (int i = 0; i < w*h; i++) {
 +			grid[i] = -1;
 +			gridOverlap[i] = false;
++			gridFloor[i] = false;
++			gridDoor[i] = false;
 +		}
 +		overlaps = false;
 +		for (int k = 0; k < am; k++) {
@@ -627,7 +824,11 @@ index 0000000..b4c5af2
 +			}
 +		}
 +		for (int k = 0; k < wAm; k++)
-+			mark(pwx[k]-anchorX+halfW + (pwy[k]-anchorY+halfH)*w, MAX+k);
++			mark(pwx[k]-anchorX+halfW + (pwy[k]-anchorY+halfH)*w, ITEMS+k);
++		for (int k = 0; k < aAm; k++)
++			gridFloor[pax[k]-anchorX+halfW + (pay[k]-anchorY+halfH)*w] = true;
++		for (int k = 0; k < dAm; k++)
++			gridDoor[pdoorX[k]-anchorX+halfW + (pdoorY[k]-anchorY+halfH)*w] = true;
 +	}
 +
 +	private void mark(int i, int value) {
@@ -647,6 +848,10 @@ index 0000000..b4c5af2
 +		return py[k]-anchorY+halfH;
 +	}
 +
++	private boolean inBox(int rx, int ry) {
++		return rx >= 0 && ry >= 0 && rx < halfW*2+1 && ry < halfH*2+1;
++	}
++
 +	private int gridAt(int rx, int ry) {
 +		int w = halfW*2+1;
 +		if (rx < 0 || ry < 0 || rx >= w || ry >= halfH*2+1)
@@ -661,13 +866,21 @@ index 0000000..b4c5af2
 +
 +	private int wallAt(int rx, int ry) {
 +		int k = gridAt(rx, ry);
-+		return k >= MAX ? k-MAX : -1;
++		return k >= ITEMS ? k-ITEMS : -1;
++	}
++
++	private boolean floorAt(int rx, int ry) {
++		return inBox(rx, ry) && gridFloor[rx+ry*(halfW*2+1)];
++	}
++
++	private boolean doorAt(int rx, int ry) {
++		return inBox(rx, ry) && gridDoor[rx+ry*(halfW*2+1)];
 +	}
 +
 +	/**
-+	 * Rotates (90° clockwise) or mirrors the selection around the anchor. Every item is swapped for the
++	 * Rotates (90┬░ clockwise) or mirrors the selection around the anchor. Every item is swapped for the
 +	 * variant of its group whose tiles match the turned item. If one has no such variant, nothing changes.
-+	 * Walls turn with the selection and keep their size.
++	 * Walls, and the floor and doorways of a moved room, turn with the selection and keep their size.
 +	 */
 +	private void transform(int op) {
 +		for (int k = 0; k < am; k++) {
@@ -697,21 +910,28 @@ index 0000000..b4c5af2
 +			}
 +			pit[k] = tmp[k];
 +		}
-+		for (int k = 0; k < wAm; k++) {
-+			int x1 = pwx[k]-anchorX;
-+			int y1 = pwy[k]-anchorY;
-+			if (op == ROTATE) {
-+				pwx[k] = anchorX-y1;
-+				pwy[k] = anchorY+x1;
-+			}else if (op == FLIP_X) {
-+				pwx[k] = anchorX-x1;
-+			}else if (op == FLIP_Y) {
-+				pwy[k] = anchorY-y1;
-+			}
-+		}
++		turn(pwx, pwy, wAm, op);
++		turn(pax, pay, aAm, op);
++		turn(pdoorX, pdoorY, dAm, op);
 +		noteUntil = 0;
 +		buildGrid();
 +		dirty = true;
++	}
++
++	// turns single tiles around the anchor
++	private void turn(int[] xs, int[] ys, int n, int op) {
++		for (int k = 0; k < n; k++) {
++			int x1 = xs[k]-anchorX;
++			int y1 = ys[k]-anchorY;
++			if (op == ROTATE) {
++				xs[k] = anchorX-y1;
++				ys[k] = anchorY+x1;
++			}else if (op == FLIP_X) {
++				xs[k] = anchorX-x1;
++			}else if (op == FLIP_Y) {
++				ys[k] = anchorY-y1;
++			}
++		}
 +	}
 +
 +	private static FurnisherItem turned(FurnisherItem it, int op) {
@@ -765,6 +985,9 @@ index 0000000..b4c5af2
 +		for (int k = 0; k < wAm; k++)
 +			if (pwx[k] != wx[k] || pwy[k] != wy[k])
 +				return false;
++		for (int k = 0; k < aAm; k++)
++			if (pax[k] != ax[k] || pay[k] != ay[k])
++				return false;
 +		return true;
 +	}
 +
@@ -775,7 +998,12 @@ index 0000000..b4c5af2
 +		problem = null;
 +
 +		if (overlaps) {
-+			problem = ¤¤overlap;
++			problem = ┬ñ┬ñoverlap;
++			return problem;
++		}
++
++		if (room) {
++			problem = roomProblem();
 +			return problem;
 +		}
 +
@@ -791,7 +1019,7 @@ index 0000000..b4c5af2
 +				FurnisherItemGroup g = pit[k].group;
 +				groupAm[g.index()]++;
 +				if (p.resources.groups(g) + groupAm[g.index()] > g.max) {
-+					problem = ¤¤maxReached;
++					problem = ┬ñ┬ñmaxReached;
 +					return problem;
 +				}
 +			}
@@ -815,11 +1043,42 @@ index 0000000..b4c5af2
 +		return problem;
 +	}
 +
++	// the new floor must be able to become room, the items must fit on it and the move must fit in one history step
++	private CharSequence roomProblem() {
++		if (tooMany)
++			return ┬ñ┬ñtooMany;
++		int added = 0;
++		for (int k = 0; k < aAm; k++) {
++			int x = pax[k]+offX;
++			int y = pay[k]+offY;
++			if (p.instance.is(x, y))
++				continue;
++			added++;
++			CharSequence s = cantBeRoom(x, y);
++			if (s != null)
++				return s;
++		}
++		// the room leaves as many tiles as it gains, each item and doorway is removed and placed
++		if (2*(added + am + dAm) > HISTORY)
++			return ┬ñ┬ñtooFar;
++		for (int k = 0; k < am; k++) {
++			CharSequence s = p.placability.itemProblem(px[k]+offX, py[k]+offY, pit[k].group, pit[k], ghost);
++			if (s != null)
++				return s;
++		}
++		return null;
++	}
++
 +	private void drop() {
 +
 +		if (!copy && unchanged()) {
 +			restore();
 +			pending = selector;
++			return;
++		}
++
++		if (room) {
++			dropRoom();
 +			return;
 +		}
 +
@@ -919,6 +1178,89 @@ index 0000000..b4c5af2
 +		}
 +	}
 +
++	// moves the floor, the doorways and the items, all checked by roomProblem against the floor where it's dropped
++	private void dropRoom() {
++		MapDataF d = SETT.ROOMS().fData;
++		for (int k = 0; k < am; k++)
++			if (built[k])
++				setBuilt(k, 0);
++
++		// doorways come off while the floor is where they were, and are set again around the new floor
++		for (int k = 0; k < dAm; k++)
++			dOff[k] = p.door.removeWithoutHistory(doorX[k], doorY[k]);
++
++		// the new floor first, so the room is never empty. Floor that stays keeps what's built on it
++		for (int k = 0; k < aAm; k++) {
++			int x = pax[k]+offX;
++			int y = pay[k]+offY;
++			aNew[k] = !p.instance.is(x, y);
++			if (aNew[k]) {
++				// what the area placer does when it expands the room
++				SETT.JOBS().clearer.set(x, y);
++				p.instance.set(x, y);
++				SETT.ROOMS().data.set(p.instance, x, y, 0);
++			}
++		}
++		for (int k = 0; k < aAm; k++) {
++			int x = ax[k];
++			int y = ay[k];
++			aGone[k] = !ghost.is(x, y);
++			if (!aGone[k])
++				continue;
++			// and when it shrinks it
++			if (ConstructionData.dFloored.is(x, y, 1)) {
++				p.resources.removeTile(x, y);
++				SETT.FLOOR().clearer.clear(x, y);
++			}
++			SETT.MAINTENANCE().isser.is(x, y);
++			p.instance.clear(x, y);
++		}
++
++		for (int k = 0; k < dAm; k++)
++			dOn[k] = p.door.placeWithoutHistory(pdoorX[k]+offX, pdoorY[k]+offY);
++
++		for (int k = 0; k < am; k++) {
++			int x = px[k]+offX;
++			int y = py[k]+offY;
++			dropOk[k] = fitsNow(x, y, pit[k]) == null;
++			if (dropOk[k]) {
++				d.itemSet(x, y, pit[k], p.instance);
++				p.resources.updatee();
++			}else {
++				// shouldn't happen, it was checked. It's left out, an undo brings it back
++				LOG.err("room mover: " + pit[k].group.name() + " doesn't fit at " + x + " " + y);
++			}
++		}
++
++		// undo goes newest first: the dropped items, the new doorways, the floor, the old doorways, then the
++		// items come back where they were
++		for (int k = 0; k < am; k++)
++			p.history.placeItem(items[k], ox[k], oy[k], -1);
++		for (int k = 0; k < am; k++)
++			if (built[k])
++				p.resources.removeItem(ox[k], oy[k], items[k]);
++		for (int k = 0; k < dAm; k++)
++			if (dOff[k])
++				p.history.placeDoor(doorX[k], doorY[k], -1);
++		for (int k = 0; k < aAm; k++)
++			if (aNew[k])
++				p.history.placeEmbryo(pax[k]+offX, pay[k]+offY, 1);
++		for (int k = 0; k < aAm; k++)
++			if (aGone[k])
++				p.history.placeEmbryo(ax[k], ay[k], -1);
++		for (int k = 0; k < dAm; k++)
++			if (dOn[k])
++				p.history.placeDoor(pdoorX[k]+offX, pdoorY[k]+offY, 1);
++		for (int k = 0; k < am; k++)
++			if (dropOk[k])
++				p.history.placeItem(pit[k], px[k]+offX, py[k]+offY, 1);
++		p.resources.updatee();
++		scanDirty = true;
++		lifted = false;
++		clearSelection();
++		pending = selector;
++	}
++
 +	// items around a new wall that don't fit any more are removed, like the area placer does
 +	private void validateItems(int tx, int ty) {
 +		MapDataF d = SETT.ROOMS().fData;
@@ -981,23 +1323,29 @@ index 0000000..b4c5af2
 +	private final class Selector extends PlacableMulti {
 +
 +		private final Str hint = new Str(256);
++		// moving the room: the drag touched it
++		private boolean hit;
 +
 +		Selector(){
-+			super(¤¤select, ¤¤selectDesc, null);
++			super(┬ñ┬ñselect, ┬ñ┬ñselectDesc, null);
 +		}
 +
 +		@Override
 +		public CharSequence isPlacable(int tx, int ty, AREA area, PLACER_TYPE type) {
++			if (room)
++				return p.instance.is(tx, ty) ? null : PlacableMessages.┬ñ┬ñROOM_MUST;
 +			scan();
 +			if (wall(tx, ty) >= 0)
 +				return null;
 +			if (!p.instance.is(tx, ty) || SETT.ROOMS().fData.item.get(tx, ty) == null)
-+				return PlacableMessages.¤¤ITEM_MUST;
++				return PlacableMessages.┬ñ┬ñITEM_MUST;
 +			return null;
 +		}
 +
 +		@Override
 +		public boolean expandsTo(int fromX, int fromY, int toX, int toY) {
++			if (room)
++				return p.instance.is(fromX, fromY) && p.instance.is(toX, toY);
 +			int w = wall(fromX, fromY);
 +			if (w >= 0)
 +				return wall(toX, toY) == w;
@@ -1019,14 +1367,18 @@ index 0000000..b4c5af2
 +
 +		@Override
 +		public void finishChecking(AREA placedArea) {
-+			am = 0;
-+			wAm = 0;
++			clearSelection();
++			hit = false;
 +			for (int i = 0; i < wallSel.length; i++)
 +				wallSel[i] = false;
 +		}
 +
 +		@Override
 +		public void place(int tx, int ty, AREA area, PLACER_TYPE type) {
++			if (room) {
++				hit = true;
++				return;
++			}
 +			int w = wall(tx, ty);
 +			if (w >= 0) {
 +				addWall(w);
@@ -1039,9 +1391,13 @@ index 0000000..b4c5af2
 +
 +		@Override
 +		public void finishPlacing(AREA placedArea) {
-+			if (am + wAm > 0 && KEYS.MAIN().MOD.isPressed())
++			if (room) {
++				if (hit)
++					collectRoom();
++			}else if (am + wAm > 0 && KEYS.MAIN().MOD.isPressed()) {
 +				addSameTypes();
-+			if (am + wAm > 0)
++			}
++			if (carried() > 0)
 +				pending = floater;
 +		}
 +
@@ -1057,18 +1413,25 @@ index 0000000..b4c5af2
 +		@Override
 +		public void placeInfo(GBox b, int oktiles, AREA a) {
 +			super.placeInfo(b, oktiles, a);
++			if (room)
++				return;
 +			b.NL();
-+			b.text(hint.clear().add(¤¤allOfType).insert(0, KEYS.MAIN().MOD.repr()));
++			b.text(hint.clear().add(┬ñ┬ñallOfType).insert(0, KEYS.MAIN().MOD.repr()));
 +			if (!withWalls) {
 +				b.NL();
-+				b.text(¤¤wallsHint);
++				b.text(┬ñ┬ñwallsHint);
 +			}
 +		}
 +
 +		@Override
 +		public void hoverDesc(GBox box) {
-+			box.title(copy ? ¤¤copy : ¤¤move);
-+			box.text(hint.clear().add(¤¤selectDesc).insert(0, KEYS.MAIN().MOD.repr()).insert(0, KEYS.MAIN().MOD.repr()));
++			if (room) {
++				box.title(┬ñ┬ñnudge);
++				box.text(┬ñ┬ñnudgeDesc);
++				return;
++			}
++			box.title(copy ? ┬ñ┬ñcopy : ┬ñ┬ñmove);
++			box.text(hint.clear().add(┬ñ┬ñselectDesc).insert(0, KEYS.MAIN().MOD.repr()).insert(0, KEYS.MAIN().MOD.repr()));
 +		}
 +
 +	};
@@ -1079,7 +1442,7 @@ index 0000000..b4c5af2
 +
 +		@Override
 +		public CharSequence name() {
-+			return copy ? ¤¤copy : ¤¤move;
++			return room ? ┬ñ┬ñnudge : copy ? ┬ñ┬ñcopy : ┬ñ┬ñmove;
 +		}
 +
 +		@Override
@@ -1110,14 +1473,14 @@ index 0000000..b4c5af2
 +		// The tool's -/+ buttons and grow / shrink keys (Q / E, Ctrl + wheel) work on a size index. The selection
 +		// says it has a size below the current one if all items can shrink, and one above if all can grow, so the
 +		// buttons are greyed (or hidden) like for a single item. A step off sizeBase() resizes the selection
-+		// (sizeSet is final, so it's read back in updateRegardless). Walls alone have no sizes
++		// (sizeSet is final, so it's read back in updateRegardless). Walls alone and a moved room have no sizes
 +		@Override
 +		public int sizes() {
-+			return sizeBase() + 1 + (am > 0 && blocked[GROW] == null ? 1 : 0);
++			return sizeBase() + 1 + (am > 0 && !room && blocked[GROW] == null ? 1 : 0);
 +		}
 +
 +		int sizeBase() {
-+			return am > 0 && blocked[SHRINK] == null ? 1 : 0;
++			return am > 0 && !room && blocked[SHRINK] == null ? 1 : 0;
 +		}
 +
 +		@Override
@@ -1149,13 +1512,18 @@ index 0000000..b4c5af2
 +		@Override
 +		public CharSequence placable(int tx, int ty, int rx, int ry) {
 +			if (gridAt(rx, ry) >= 0 && gridOverlap[rx+ry*(halfW*2+1)])
-+				return ¤¤overlap;
++				return ┬ñ┬ñoverlap;
 +			if (wallAt(rx, ry) >= 0)
 +				return wallProblem(tx, ty);
++			if (room && floorAt(rx, ry) && !p.instance.is(tx, ty)) {
++				CharSequence s = cantBeRoom(tx, ty);
++				if (s != null)
++					return s;
++			}
 +			int k = itemAt(rx, ry);
 +			if (k < 0)
 +				return null;
-+			return p.placability.itemPlacable(tx, ty, rx-rx(k), ry-ry(k), pit[k], p.instance);
++			return p.placability.itemPlacable(tx, ty, rx-rx(k), ry-ry(k), pit[k], room ? ghost : p.instance);
 +		}
 +
 +		@Override
@@ -1176,10 +1544,9 @@ index 0000000..b4c5af2
 +				sizeSet(sizeBase());
 +			}
 +			// also when the undo button put the lifted items back
-+			if (pending == selector || am + wAm == 0) {
++			if (pending == selector || carried() == 0) {
 +				pending = null;
-+				am = 0;
-+				wAm = 0;
++				clearSelection();
 +				VIEW.s().tools.place(selector, config);
 +			}
 +		}
@@ -1191,15 +1558,26 @@ index 0000000..b4c5af2
 +				SPRITES.cons().BIG.filled.render(r, 0, x, y);
 +				return;
 +			}
-+			int k = itemAt(rx, ry);
-+			if (k < 0)
++			if (doorAt(rx, ry)) {
++				SPRITES.cons().BIG.outline.render(r, 0, x, y);
 +				return;
++			}
++			int k = itemAt(rx, ry);
++			FurnisherItemTile t = k < 0 ? null : pit[k].get(rx-rx(k), ry-ry(k));
++			if (t == null) {
++				// the floor of a moved room, outlined at its edge
++				if (floorAt(rx, ry)) {
++					int m = 0;
++					for (DIR dir : DIR.ORTHO)
++						if (floorAt(rx+dir.x(), ry+dir.y()))
++							m |= dir.mask();
++					SPRITES.cons().BIG.dashed.render(r, m, x, y);
++				}
++				return;
++			}
 +			FurnisherItem it = pit[k];
 +			int ix = rx-rx(k);
 +			int iy = ry-ry(k);
-+			FurnisherItemTile t = it.get(ix, iy);
-+			if (t == null)
-+				return;
 +
 +			if (t.mustBeReachable) {
 +				SPRITES.cons().BIG.filled.render(r, 0, x, y);
@@ -1230,21 +1608,27 @@ index 0000000..b4c5af2
 +
 +		@Override
 +		public void placeInfo(GBox b, int x1, int y1) {
-+			b.add(b.text().add(am).s().add(¤¤items));
++			b.add(b.text().add(am).s().add(┬ñ┬ñitems));
 +			if (wAm > 0) {
 +				b.tab(4);
-+				b.add(b.text().add(wAm).s().add(¤¤walls));
++				b.add(b.text().add(wAm).s().add(┬ñ┬ñwalls));
++			}
++			if (room) {
++				b.tab(4);
++				b.add(b.text().add(dAm).s().add(┬ñ┬ñdoors));
 +			}
 +			b.NL();
-+			b.add(b.text().lablify().add(¤¤offset));
++			b.add(b.text().lablify().add(┬ñ┬ñoffset));
 +			b.tab(4);
 +			b.add(b.text().add(offX).add(',').s().add(offY));
 +			b.NL();
-+			b.add(b.text().add(¤¤rotate).s().add(KEYS.MAIN().ROTATE.repr()));
++			b.add(b.text().add(┬ñ┬ñrotate).s().add(KEYS.MAIN().ROTATE.repr()));
 +			b.NL();
-+			b.add(b.text().add(¤¤size).s().add(KEYS.MAIN().SHRINK.repr()).add(' ').add('/').add(' ').add(KEYS.MAIN().GROW.repr()));
-+			b.NL();
-+			b.text(¤¤cancel);
++			if (!room) {
++				b.add(b.text().add(┬ñ┬ñsize).s().add(KEYS.MAIN().SHRINK.repr()).add(' ').add('/').add(' ').add(KEYS.MAIN().GROW.repr()));
++				b.NL();
++			}
++			b.text(┬ñ┬ñcancel);
 +			if (noteUntil > VIEW.renderSecond()) {
 +				b.NL();
 +				b.error(note);
@@ -1255,7 +1639,7 @@ index 0000000..b4c5af2
 +
 +}
 diff --git a/settlement/room/main/placement/RoomPlacer.java b/settlement/room/main/placement/RoomPlacer.java
-index ee879a9..d79ac65 100644
+index ee879a9..d759f9a 100644
 --- a/settlement/room/main/placement/RoomPlacer.java
 +++ b/settlement/room/main/placement/RoomPlacer.java
 @@ -49,6 +49,8 @@ public final class RoomPlacer {
@@ -1293,15 +1677,17 @@ index ee879a9..d79ac65 100644
  		if (createProblem() != null) {
  			throw new RuntimeException(""+createProblem());
  		}
-@@ -434,6 +441,7 @@ public final class RoomPlacer {
+@@ -434,6 +441,9 @@ public final class RoomPlacer {
  	public boolean popHistory() {
  		if (instance.blue == null)
  			return false;
++		if (mover.cancelMove()) // GOUL: an undo while moving only cancels the move
++			return true;
 +		mover.restore(); // GOUL: items being moved go back first
  		if (history.hasHistory()) {
  			history.popHistory();
  			return true;
-@@ -442,9 +450,27 @@ public final class RoomPlacer {
+@@ -442,9 +452,27 @@ public final class RoomPlacer {
  		
  	}
  	
@@ -1329,7 +1715,7 @@ index ee879a9..d79ac65 100644
  		if (resources.items > 0) {
  			for (COORDINATE c : instance.body()) {
  				if (instance.is(c)) {
-@@ -459,6 +485,7 @@ public final class RoomPlacer {
+@@ -459,6 +487,7 @@ public final class RoomPlacer {
  	public boolean removeArea() {
  		if (instance.blue == null)
  			return false;
@@ -1338,10 +1724,10 @@ index ee879a9..d79ac65 100644
  			RoomBlueprintImp b = blueprint();
  			instance.clear(blueprint());
 diff --git a/settlement/room/main/placement/UtilHistory.java b/settlement/room/main/placement/UtilHistory.java
-index 0666353..03ea6b0 100644
+index 0666353..41b1c93 100644
 --- a/settlement/room/main/placement/UtilHistory.java
 +++ b/settlement/room/main/placement/UtilHistory.java
-@@ -16,6 +16,15 @@ final class UtilHistory {
+@@ -16,6 +16,16 @@ final class UtilHistory {
  	private short tick;
  	private int currentTick;
  	
@@ -1353,11 +1739,12 @@ index 0666353..03ea6b0 100644
 +	private int redoAm;
 +	private short redoTick;
 +	private boolean redoing;
++	private final short[] order = new short[historyAmount]; // GOUL: the history oldest last, for clearHistory
 +	
  	UtilHistory(RoomPlacer p) {
  		for (int i = 0; i < historyAmount; i++) {
  			histories[i] = new HistoryI(i);
-@@ -25,6 +34,7 @@ final class UtilHistory {
+@@ -25,6 +35,7 @@ final class UtilHistory {
  	}
  	
  	public void clear() {
@@ -1365,7 +1752,7 @@ index 0666353..03ea6b0 100644
  		while(historyFirst != -1) {
  			hStack.push(historyFirst);
  			historyFirst = histories[historyFirst].next;
-@@ -36,6 +46,8 @@ final class UtilHistory {
+@@ -36,6 +47,8 @@ final class UtilHistory {
  	}
  	
  	private void init() {
@@ -1374,7 +1761,46 @@ index 0666353..03ea6b0 100644
  		if (currentTick != GAME.updateI()) {
  			tick++;
  			currentTick = GAME.updateI();
-@@ -122,9 +134,11 @@ final class UtilHistory {
+@@ -97,20 +110,26 @@ final class UtilHistory {
+ 		
+ 	}
+ 	
++	// GOUL: vanilla returned amount-1 on every level, so a full history was dropped whole, the step being recorded
++	// included, and an undo then only reverted the end of that step. Now the oldest entries are dropped, at least
++	// amount and whole steps, so no step is left half undone
+ 	private int clearHistory(int previous, int current, int amount) {
+-		if (current == -1)
+-			return amount;
+-		if (clearHistory(current, histories[current].next, amount) > 0) {
+-			hStack.push(current);
+-			histories[current].next = -1;
+-			if (previous == -1) {
+-				historyFirst = -1;
+-			}else {
+-				histories[previous].next = -1;
+-			}
+-			
+-			return amount-1;
++		int n = 0;
++		for (int i = current; i != -1; i = histories[i].next)
++			order[n++] = (short) i;
++		int keep = Math.max(n-amount, 0);
++		while (keep > 0 && keep < n && histories[order[keep-1]].tick == histories[order[keep]].tick)
++			keep--;
++		for (int k = keep; k < n; k++) {
++			hStack.push(order[k]);
++			histories[order[k]].next = -1;
+ 		}
++		if (keep > 0)
++			histories[order[keep-1]].next = -1;
++		else if (previous == -1)
++			historyFirst = -1;
++		else
++			histories[previous].next = -1;
+ 		return 0;
+ 	}
+ 	
+@@ -122,14 +141,17 @@ final class UtilHistory {
  		
  		short hi = historyFirst;
  		int t = histories[hi].tick;
@@ -1386,7 +1812,13 @@ index 0666353..03ea6b0 100644
  			hi = h.next;
  			historyFirst = hi;
  			if (h.action < 256) {
-@@ -162,6 +176,82 @@ final class UtilHistory {
+ 				if (h.action <= 0) {
+ 					FurnisherItem it = p.blueprint().constructor().item(-h.action);
++					p.resources.updatee(); // GOUL: the item counts are kept per tick, recount without the items this undo removed
+ 					if (p.placability.itemProblem(h.x, h.y, it.group, it, p.instance) != null){
+ 						clear();
+ 						return;
+@@ -162,6 +184,83 @@ final class UtilHistory {
  		
  	}
  	
@@ -1439,6 +1871,7 @@ index 0666353..03ea6b0 100644
 +				FurnisherItem it = p.blueprint().constructor().item(action-1);
 +				int x1 = x - it.firstX();
 +				int y1 = y - it.firstY();
++				p.resources.updatee();
 +				if (p.placability.itemProblem(x1, y1, it.group, it, p.instance) != null)
 +					return false;
 +				for (int ry = 0; ry < it.height(); ry++) {
@@ -1612,7 +2045,7 @@ index 9fb0ee0..73c5d30 100644
  		ACTION create = new ACTION() {
  			
 diff --git a/view/sett/ui/room/construction/SItems.java b/view/sett/ui/room/construction/SItems.java
-index a1f462d..dd3c11a 100644
+index a1f462d..38f46a0 100644
 --- a/view/sett/ui/room/construction/SItems.java
 +++ b/view/sett/ui/room/construction/SItems.java
 @@ -1,13 +1,19 @@
@@ -1635,7 +2068,7 @@ index a1f462d..dd3c11a 100644
  import util.data.GETTER;
  import util.gui.misc.GBox;
  import util.gui.misc.GButt;
-@@ -17,11 +23,24 @@ import util.gui.misc.GText;
+@@ -17,11 +23,26 @@ import util.gui.misc.GText;
  import util.gui.table.GTableBuilder;
  import util.gui.table.GTableBuilder.GRowBuilder;
  import util.text.D;
@@ -1646,50 +2079,50 @@ index a1f462d..dd3c11a 100644
  
  final class SItems {
  
- 	private static CharSequence ¤¤Items = "¤items";
-+	// GOUL: plain text, not in the dictionary yet (D.ts would replace a ¤¤ field with its missing key)
+ 	private static CharSequence ┬ñ┬ñItems = "┬ñitems";
++	// GOUL: plain text, not in the dictionary yet (D.ts would replace a ┬ñ┬ñ field with its missing key)
 +	private static CharSequence sMove = "Move items";
 +	private static CharSequence sMoveDesc = "Drag a rectangle over items, then move them all with the mouse. Click to drop, right click to cancel. Hold Ctrl when releasing to select all items of the same types. Hold Alt (Ctrl+Alt+X, or Alt+click) to also pick up inner walls. While moving, resize, rotate and mirror the selection.";
 +	private static CharSequence sCopy = "Copy items";
 +	private static CharSequence sCopyDesc = "Drag a rectangle over items, then click to place copies of them. Right click to stop. Hold Ctrl when releasing to select all items of the same types. Hold Alt (Ctrl+Alt+C, or Alt+click) to also copy inner walls. While copying, resize, rotate and mirror the selection.";
++	private static CharSequence sNudge = "Nudge room";
++	private static CharSequence sNudgeDesc = "Shifts the room you're planning a few tiles, with its items and doorways: click the room, move the mouse, click to drop. Rotate and mirror it while nudging, right click to cancel. Made for small fixes, a far move doesn't fit in one undo step.";
 +	private static CharSequence sSelection = "Selection";
 +	private static CharSequence sFlipH = "Mirror left-right";
 +	private static CharSequence sFlipHDesc = "Mirrors the moved or copied items horizontally.";
 +	private static CharSequence sFlipV = "Mirror up-down";
 +	private static CharSequence sFlipVDesc = "Mirrors the moved or copied items vertically.";
  //	private final RENDEROBJ upgrade;
- 	private final RENDEROBJ title = new GHeader(¤¤Items).subify();
+ 	private final RENDEROBJ title = new GHeader(┬ñ┬ñItems).subify();
  	private final GuiSection section = new GuiSection();
-@@ -29,6 +48,11 @@ final class SItems {
+@@ -29,6 +50,13 @@ final class SItems {
  	private final GuiSection stolen = new GuiSection();
  	private final State state;
  	private final IButt[] butts = new IButt[8];
 +	private final CLICKABLE bMove; // GOUL
 +	private final CLICKABLE bCopy; // GOUL
++	private final CLICKABLE bNudge; // GOUL
 +	private final CLICKABLE bFlipH; // GOUL
 +	private final CLICKABLE bFlipV; // GOUL
 +	private final GuiSection selection = new GuiSection(); // GOUL: the selection tools, always in the same place
++	private final GText selectionLabel = new GText(UI.FONT().S, sSelection).lablifySub(); // GOUL
  	
  	
  	static {
-@@ -69,6 +93,16 @@ final class SItems {
+@@ -69,6 +97,12 @@ final class SItems {
  			butts[i] = new IButt(state, g);
  		}
  		
 +		bMove = moveButt(UI.icons().s.handOpen.sized(Icon.M), false, sMove, sMoveDesc); // GOUL
 +		bCopy = moveButt(SPRITES.icons().m.copy, true, sCopy, sCopyDesc); // GOUL
++		bNudge = nudgeButt(sNudge, sNudgeDesc); // GOUL
 +		bFlipH = flipButt(arrows(UI.icons().s.arrow_left, UI.icons().s.arrow_right), true, sFlipH, sFlipHDesc); // GOUL
 +		bFlipV = flipButt(arrows(UI.icons().s.arrowUp, UI.icons().s.arrowDown), false, sFlipV, sFlipVDesc); // GOUL
-+		selection.addRightC(0, new GText(UI.FONT().S, sSelection).lablifySub()); // GOUL
-+		selection.addRightC(8, bMove); // GOUL
-+		selection.addRightC(2, bCopy); // GOUL
-+		selection.addRightC(12, bFlipH); // GOUL
-+		selection.addRightC(0, bFlipV); // GOUL
 +
- //		upgrade = new GTarget(32, new GText(UI.FONT().S, DicMisc.¤¤Upgrade).lablifySub(), false, true, new INTE() {
+ //		upgrade = new GTarget(32, new GText(UI.FONT().S, DicMisc.┬ñ┬ñUpgrade).lablifySub(), false, true, new INTE() {
  //			
  //			@Override
-@@ -99,15 +133,100 @@ final class SItems {
+@@ -99,15 +133,163 @@ final class SItems {
  		
  	}
  	
@@ -1722,6 +2155,56 @@ index a1f462d..dd3c11a 100644
 +			}
 +		};
 +		return KeyButt.wrap(a, c, KEYS.SETT(), copy ? "ROOM_ITEMS_COPY" : "ROOM_ITEMS_MOVE", title, desc, KEYCODES.KEY_LEFT_CONTROL, copy ? KEYCODES.KEY_C : KEYCODES.KEY_X);
++	}
++
++	// Ctrl+M by default. Not while refurbishing (a built room or a construction site): its walls and floor are
++	// terrain, they'd stay behind
++	private CLICKABLE nudgeButt(CharSequence title, CharSequence desc) {
++		ACTION a = new ACTION() {
++
++			@Override
++			public void exe() {
++				if (VIEW.s().tools.configCurrent() != state.config || state.b == null || state.collection != null)
++					return;
++				if (!state.b.constructor().usesArea() || state.refurnishing)
++					return;
++				VIEW.s().tools.place(state.placement.placer.mover.selectRoom(state.config), state.config);
++			}
++		};
++
++		CLICKABLE c = new GButt.ButtPanel(cross()) {
++
++			@Override
++			protected void clickA() {
++				a.exe();
++			}
++
++			@Override
++			protected void renAction() {
++				selectedSet(state.placement.placer.mover.isCurrentRoom());
++			}
++		};
++		return KeyButt.wrap(a, c, KEYS.SETT(), "ROOM_NUDGE", title, desc, KEYCODES.KEY_LEFT_CONTROL, KEYCODES.KEY_M);
++	}
++
++	// four small arrows pointing out, the game has no move icon
++	private static SPRITE cross() {
++		SPRITE u = UI.icons().s.arrowUp;
++		SPRITE d = UI.icons().s.arrowDown;
++		SPRITE l = UI.icons().s.arrow_left;
++		SPRITE ri = UI.icons().s.arrow_right;
++		return new SPRITE.Imp(Icon.M, Icon.M) {
++
++			@Override
++			public void render(SPRITE_RENDERER r, int X1, int X2, int Y1, int Y2) {
++				int s = (X2-X1)*10/24;
++				int c = (X2-X1-s)/2;
++				u.render(r, X1+c, X1+c+s, Y1, Y1+s);
++				d.render(r, X1+c, X1+c+s, Y2-s, Y2);
++				l.render(r, X1, X1+s, Y1+c, Y1+c+s);
++				ri.render(r, X2-s, X2, Y1+c, Y1+c+s);
++			}
++		};
 +	}
 +
 +	// H / V by default, only does something while items are carried
@@ -1757,6 +2240,18 @@ index a1f462d..dd3c11a 100644
 +		return KeyButt.wrap(a, c, KEYS.SETT(), horizontal ? "ROOM_ITEMS_FLIP_H" : "ROOM_ITEMS_FLIP_V", title, desc, -1, horizontal ? KEYCODES.KEY_H : KEYCODES.KEY_V);
 +	}
 +
++	// GOUL: rebuilt with the panel, Nudge room is left out while refurbishing
++	private void buildSelection() {
++		selection.clear();
++		selection.addRightC(0, selectionLabel);
++		selection.addRightC(8, bMove);
++		selection.addRightC(2, bCopy);
++		if (!state.refurnishing)
++			selection.addRightC(2, bNudge);
++		selection.addRightC(12, bFlipH);
++		selection.addRightC(0, bFlipV);
++	}
++
 +	// two small arrows side by side, the game has no mirror icon
 +	private static SPRITE arrows(SPRITE a, SPRITE b) {
 +		return new SPRITE.Imp(a.width()+b.width(), Math.max(a.height(), b.height())) {
@@ -1787,11 +2282,12 @@ index a1f462d..dd3c11a 100644
 +		if (itemToolActive() || state.placement.placer.mover.isCarrying()) // GOUL: was VIEW.s().tools.is(state.placement.placer.itemPlacerCurrent()). While carrying, they size and turn the selection
  			VIEW.s().tools.placer.stealButtons(stolen, true);
  		section.addRightC(8, stolen);
++		buildSelection(); // GOUL
 +		section.add(selection, 0, section.getLastY2()+4); // GOUL
  		section.add(table, 0, section.getLastY2()+4);
  		
  //		if (state.upgradeMax[state.b.index()] > 0) {
-@@ -122,7 +241,7 @@ final class SItems {
+@@ -122,7 +304,7 @@ final class SItems {
  		section.addRightC(0, title);
  		stolen.clear();
  		stolen.body().setDim(1, 32);
@@ -1800,7 +2296,7 @@ index a1f462d..dd3c11a 100644
  			VIEW.s().tools.placer.stealButtons(stolen, true);
  		section.addRightC(8, stolen);
  		int y1 = section.getLastY2()+4;
-@@ -140,7 +259,7 @@ final class SItems {
+@@ -140,7 +322,7 @@ final class SItems {
  		section.addRightC(0, title);
  		stolen.clear();
  		stolen.body().setDim(1, 32);
@@ -1809,7 +2305,7 @@ index a1f462d..dd3c11a 100644
  			VIEW.s().tools.placer.stealButtons(stolen, true);
  		section.addRightC(8, stolen);
  //		if (state.upgradeMax[state.b.index()] > 0) {
-@@ -171,6 +290,8 @@ final class SItems {
+@@ -171,6 +353,8 @@ final class SItems {
  		@Override
  		protected void renAction() {
  			selectedSet(VIEW.s().tools.placer.getCurrent() == state.placement.placer.itemPlacerCurrent() && state.item() == ier.get());

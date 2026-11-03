@@ -24,6 +24,7 @@ final class UtilHistory {
 	private int redoAm;
 	private short redoTick;
 	private boolean redoing;
+	private final short[] order = new short[historyAmount]; // GOUL: the history oldest last, for clearHistory
 	
 	UtilHistory(RoomPlacer p) {
 		for (int i = 0; i < historyAmount; i++) {
@@ -109,20 +110,26 @@ final class UtilHistory {
 		
 	}
 	
+	// GOUL: vanilla returned amount-1 on every level, so a full history was dropped whole, the step being recorded
+	// included, and an undo then only reverted the end of that step. Now the oldest entries are dropped, at least
+	// amount and whole steps, so no step is left half undone
 	private int clearHistory(int previous, int current, int amount) {
-		if (current == -1)
-			return amount;
-		if (clearHistory(current, histories[current].next, amount) > 0) {
-			hStack.push(current);
-			histories[current].next = -1;
-			if (previous == -1) {
-				historyFirst = -1;
-			}else {
-				histories[previous].next = -1;
-			}
-			
-			return amount-1;
+		int n = 0;
+		for (int i = current; i != -1; i = histories[i].next)
+			order[n++] = (short) i;
+		int keep = Math.max(n-amount, 0);
+		while (keep > 0 && keep < n && histories[order[keep-1]].tick == histories[order[keep]].tick)
+			keep--;
+		for (int k = keep; k < n; k++) {
+			hStack.push(order[k]);
+			histories[order[k]].next = -1;
 		}
+		if (keep > 0)
+			histories[order[keep-1]].next = -1;
+		else if (previous == -1)
+			historyFirst = -1;
+		else
+			histories[previous].next = -1;
 		return 0;
 	}
 	
@@ -144,6 +151,7 @@ final class UtilHistory {
 			if (h.action < 256) {
 				if (h.action <= 0) {
 					FurnisherItem it = p.blueprint().constructor().item(-h.action);
+					p.resources.updatee(); // GOUL: the item counts are kept per tick, recount without the items this undo removed
 					if (p.placability.itemProblem(h.x, h.y, it.group, it, p.instance) != null){
 						clear();
 						return;
@@ -225,6 +233,7 @@ final class UtilHistory {
 				FurnisherItem it = p.blueprint().constructor().item(action-1);
 				int x1 = x - it.firstX();
 				int y1 = y - it.firstY();
+				p.resources.updatee();
 				if (p.placability.itemProblem(x1, y1, it.group, it, p.instance) != null)
 					return false;
 				for (int ry = 0; ry < it.height(); ry++) {

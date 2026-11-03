@@ -36,6 +36,8 @@ final class SItems {
 	private static CharSequence sMoveDesc = "Drag a rectangle over items, then move them all with the mouse. Click to drop, right click to cancel. Hold Ctrl when releasing to select all items of the same types. Hold Alt (Ctrl+Alt+X, or Alt+click) to also pick up inner walls. While moving, resize, rotate and mirror the selection.";
 	private static CharSequence sCopy = "Copy items";
 	private static CharSequence sCopyDesc = "Drag a rectangle over items, then click to place copies of them. Right click to stop. Hold Ctrl when releasing to select all items of the same types. Hold Alt (Ctrl+Alt+C, or Alt+click) to also copy inner walls. While copying, resize, rotate and mirror the selection.";
+	private static CharSequence sNudge = "Nudge room";
+	private static CharSequence sNudgeDesc = "Shifts the room you're planning a few tiles, with its items and doorways: click the room, move the mouse, click to drop. Rotate and mirror it while nudging, right click to cancel. Made for small fixes, a far move doesn't fit in one undo step.";
 	private static CharSequence sSelection = "Selection";
 	private static CharSequence sFlipH = "Mirror left-right";
 	private static CharSequence sFlipHDesc = "Mirrors the moved or copied items horizontally.";
@@ -50,9 +52,11 @@ final class SItems {
 	private final IButt[] butts = new IButt[8];
 	private final CLICKABLE bMove; // GOUL
 	private final CLICKABLE bCopy; // GOUL
+	private final CLICKABLE bNudge; // GOUL
 	private final CLICKABLE bFlipH; // GOUL
 	private final CLICKABLE bFlipV; // GOUL
 	private final GuiSection selection = new GuiSection(); // GOUL: the selection tools, always in the same place
+	private final GText selectionLabel = new GText(UI.FONT().S, sSelection).lablifySub(); // GOUL
 	
 	
 	static {
@@ -95,13 +99,9 @@ final class SItems {
 		
 		bMove = moveButt(UI.icons().s.handOpen.sized(Icon.M), false, sMove, sMoveDesc); // GOUL
 		bCopy = moveButt(SPRITES.icons().m.copy, true, sCopy, sCopyDesc); // GOUL
+		bNudge = nudgeButt(sNudge, sNudgeDesc); // GOUL
 		bFlipH = flipButt(arrows(UI.icons().s.arrow_left, UI.icons().s.arrow_right), true, sFlipH, sFlipHDesc); // GOUL
 		bFlipV = flipButt(arrows(UI.icons().s.arrowUp, UI.icons().s.arrowDown), false, sFlipV, sFlipVDesc); // GOUL
-		selection.addRightC(0, new GText(UI.FONT().S, sSelection).lablifySub()); // GOUL
-		selection.addRightC(8, bMove); // GOUL
-		selection.addRightC(2, bCopy); // GOUL
-		selection.addRightC(12, bFlipH); // GOUL
-		selection.addRightC(0, bFlipV); // GOUL
 
 //		upgrade = new GTarget(32, new GText(UI.FONT().S, DicMisc.¤¤Upgrade).lablifySub(), false, true, new INTE() {
 //			
@@ -164,6 +164,56 @@ final class SItems {
 		return KeyButt.wrap(a, c, KEYS.SETT(), copy ? "ROOM_ITEMS_COPY" : "ROOM_ITEMS_MOVE", title, desc, KEYCODES.KEY_LEFT_CONTROL, copy ? KEYCODES.KEY_C : KEYCODES.KEY_X);
 	}
 
+	// Ctrl+M by default. Not while refurbishing (a built room or a construction site): its walls and floor are
+	// terrain, they'd stay behind
+	private CLICKABLE nudgeButt(CharSequence title, CharSequence desc) {
+		ACTION a = new ACTION() {
+
+			@Override
+			public void exe() {
+				if (VIEW.s().tools.configCurrent() != state.config || state.b == null || state.collection != null)
+					return;
+				if (!state.b.constructor().usesArea() || state.refurnishing)
+					return;
+				VIEW.s().tools.place(state.placement.placer.mover.selectRoom(state.config), state.config);
+			}
+		};
+
+		CLICKABLE c = new GButt.ButtPanel(cross()) {
+
+			@Override
+			protected void clickA() {
+				a.exe();
+			}
+
+			@Override
+			protected void renAction() {
+				selectedSet(state.placement.placer.mover.isCurrentRoom());
+			}
+		};
+		return KeyButt.wrap(a, c, KEYS.SETT(), "ROOM_NUDGE", title, desc, KEYCODES.KEY_LEFT_CONTROL, KEYCODES.KEY_M);
+	}
+
+	// four small arrows pointing out, the game has no move icon
+	private static SPRITE cross() {
+		SPRITE u = UI.icons().s.arrowUp;
+		SPRITE d = UI.icons().s.arrowDown;
+		SPRITE l = UI.icons().s.arrow_left;
+		SPRITE ri = UI.icons().s.arrow_right;
+		return new SPRITE.Imp(Icon.M, Icon.M) {
+
+			@Override
+			public void render(SPRITE_RENDERER r, int X1, int X2, int Y1, int Y2) {
+				int s = (X2-X1)*10/24;
+				int c = (X2-X1-s)/2;
+				u.render(r, X1+c, X1+c+s, Y1, Y1+s);
+				d.render(r, X1+c, X1+c+s, Y2-s, Y2);
+				l.render(r, X1, X1+s, Y1+c, Y1+c+s);
+				ri.render(r, X2-s, X2, Y1+c, Y1+c+s);
+			}
+		};
+	}
+
 	// H / V by default, only does something while items are carried
 	private CLICKABLE flipButt(SPRITE icon, boolean horizontal, CharSequence title, CharSequence desc) {
 		ACTION a = new ACTION() {
@@ -197,6 +247,18 @@ final class SItems {
 		return KeyButt.wrap(a, c, KEYS.SETT(), horizontal ? "ROOM_ITEMS_FLIP_H" : "ROOM_ITEMS_FLIP_V", title, desc, -1, horizontal ? KEYCODES.KEY_H : KEYCODES.KEY_V);
 	}
 
+	// GOUL: rebuilt with the panel, Nudge room is left out while refurbishing
+	private void buildSelection() {
+		selection.clear();
+		selection.addRightC(0, selectionLabel);
+		selection.addRightC(8, bMove);
+		selection.addRightC(2, bCopy);
+		if (!state.refurnishing)
+			selection.addRightC(2, bNudge);
+		selection.addRightC(12, bFlipH);
+		selection.addRightC(0, bFlipV);
+	}
+
 	// two small arrows side by side, the game has no mirror icon
 	private static SPRITE arrows(SPRITE a, SPRITE b) {
 		return new SPRITE.Imp(a.width()+b.width(), Math.max(a.height(), b.height())) {
@@ -226,6 +288,7 @@ final class SItems {
 		if (itemToolActive() || state.placement.placer.mover.isCarrying()) // GOUL: was VIEW.s().tools.is(state.placement.placer.itemPlacerCurrent()). While carrying, they size and turn the selection
 			VIEW.s().tools.placer.stealButtons(stolen, true);
 		section.addRightC(8, stolen);
+		buildSelection(); // GOUL
 		section.add(selection, 0, section.getLastY2()+4); // GOUL
 		section.add(table, 0, section.getLastY2()+4);
 		
