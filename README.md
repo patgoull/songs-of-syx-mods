@@ -13,6 +13,7 @@ Every change is marked `// GOUL`, and each feature comes with a ready-to-read di
 |---|---|---|
 | [Room Builder Plus](features/room-builder-plus/README.md) | Move, copy, rotate and mirror many furniture items and inner walls (pillars) at once while planning or refurbishing a room, nudge a whole planned room a few tiles, redo, rebindable Ctrl+Z / Ctrl+Y / Ctrl+X / Ctrl+C / Ctrl+M, and fixes for the Remove Item toggle disappearing and getting stuck and for undo breaking in big rooms | [room-builder-plus.patch](patches/room-builder-plus.patch) |
 | [Room Checklist](features/room-checklist/README.md) (proof of concept) | The room construction panel says whether the room can be constructed, and on hover lists every requirement met or not, instead of only the first problem | [room-checklist.patch](patches/room-checklist.patch) |
+| [Move Room](features/move-room/README.md) (proof of concept) | Move a built room in one click: pick it, place it (overlapping or rotated), and it's dismantled and planned again with the same settings, with its old walls and roof dismantled unless still needed | [move-room.patch](patches/move-room.patch) |
 
 ## Layout
 
