@@ -402,6 +402,7 @@ Learning: [MOOC Java course](https://java-programming.mooc.fi/) · [Baeldung](ht
 - Production graph / room planner: https://nobody0.github.io/syx-vis/
 - Official (older) docs in the install: `info/MAKE_A_MOD.txt`, `info/scriptGuide.odt`
 - Steam Workshop uploader: https://github.com/VizardAlpha/SteamWorkshopManager/releases/
+- Songs of Syx Modding Handbook (community, data/config modding for 71.44, no code modding): https://bendigeidfran.github.io/Syx-Modding-Handbook/. All documented config tags as JSON: https://bendigeidfran.github.io/Syx-Modding-Handbook/toolkit/tags.json
 
 ## 10. Not yet verified
 

@@ -97,6 +97,20 @@ Not in the game. The design in progress is a single temporary "embryo" room (`PL
   Later: open Blueprints, place it, keep editing. Unverified: whether *planned* (not yet real) walls/doors are captured correctly.
 - Option 2 (larger): keep the embryo alive when leaving the tool and resume it on return, and save it in the savegame.
   More invasive: the embryo blocks tiles, and only one can exist at a time.
+- Checked 2026-11-03 in the V71.44 source:
+  - Option 1 falls short. `SavedPrint` stores room tiles, roof and items, but walls and doorways only if
+    `UtilWallPlacability.wallisReal / openingIsReal`, i.e. built or already a job. The design's doorways are only bits
+    on its tiles (`dWall`), so they'd be lost. The save tool (`view/sett/ui/room/prints/PlacerSave`) is a separate tool,
+    and switching to it clears the design. Placing a print (`SavedPrintsPlacer`) calls `construction.createClean`, so it
+    becomes a construction site right away and builders start on it.
+  - A construction site can already be edited again (click it, refurnish), but it's being built in the meantime.
+  - Leaving the planner without constructing clears the design: `Config.deactivateAction` → `placer.init(null, 0)`.
+  - Saving in the savegame is safe: `ROOMS.save` writes each `RoomBlueprint` (`_PLACEMENT` included) with its length
+    first, and `load` logs "room save corrupt" and skips to the end if a blueprint reads a different amount. A draft
+    written by the mod in `PLACEMENT.factory.save` is ignored by a game without the mod.
+  - So the better design is a **draft**: when leaving with an unfinished new room, snapshot it (blueprint, upgrade,
+    structure, tiles, items, doorways) and clear the tiles as today. Reopening that room type brings it back, if its
+    tiles are still free. Saved in `_PLACEMENT`'s save.
 
 Workaround that exists today for misaligned rooms: Room Copier copies a whole planned room to a shifted position. That doesn't help for 20 stations inside one room.
 
