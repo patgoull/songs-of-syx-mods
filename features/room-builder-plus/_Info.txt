@@ -1,4 +1,4 @@
-VERSION: "0.2.0",
+VERSION: "0.2.1",
 GAME_VERSION_MAJOR: 71,
 GAME_VERSION_MINOR: 84,
 NAME: "Goul - Room Builder Plus",
