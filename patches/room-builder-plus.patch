@@ -19,13 +19,13 @@ index 395afac..927d7eb 100644
 @@ -22,14 +24,47 @@ import view.tool.PlacableMulti;
  class PlacerItemArea extends PlacerItemSingle{
  
- 	private static CharSequence ┬ñ┬ñundo = "┬ñRemove Item";
+ 	private static CharSequence ¤¤undo = "¤Remove Item";
 +	private static CharSequence sAllOfType = "Hold {0} when releasing: all items of these types"; // GOUL: plain text, not in the dictionary yet
  	static {
  		D.ts(PlacerItemArea.class);
  	}
  	
- 	private final PlacableMulti undo = new PlacableMulti(┬ñ┬ñundo) {
+ 	private final PlacableMulti undo = new PlacableMulti(¤¤undo) {
  		
 +		// GOUL: with the mod key (Ctrl) held when releasing, every item of the removed types goes
 +		private final boolean[] removed = new boolean[64];
@@ -134,31 +134,31 @@ index 0000000..ae915dd
 + */
 +public final class PlacerItemMove {
 +
-+	private static CharSequence ┬ñ┬ñselect = "Select items";
-+	private static CharSequence ┬ñ┬ñselectDesc = "Drag a rectangle over the items to pick up. Hold {0} when releasing to also select all items of the same types in the room. Hold Alt to also pick up inner walls (all of them with {0}).";
-+	private static CharSequence ┬ñ┬ñwallsHint = "Hold Alt: inner walls too";
-+	private static CharSequence ┬ñ┬ñmove = "Move items";
-+	private static CharSequence ┬ñ┬ñcopy = "Copy items";
-+	private static CharSequence ┬ñ┬ñitems = "items";
-+	private static CharSequence ┬ñ┬ñwalls = "wall tiles";
-+	private static CharSequence ┬ñ┬ñoffset = "Offset";
-+	private static CharSequence ┬ñ┬ñallOfType = "Hold {0} when releasing: all items of these types";
-+	private static CharSequence ┬ñ┬ñrotate = "Rotate:";
-+	private static CharSequence ┬ñ┬ñcancel = "Right click to cancel.";
-+	private static CharSequence ┬ñ┬ñmaxReached = "Max amount of an item is reached.";
-+	private static CharSequence ┬ñ┬ñcantRotate = "Can't be rotated:";
-+	private static CharSequence ┬ñ┬ñcantFlip = "Can't be mirrored:";
-+	private static CharSequence ┬ñ┬ñcantGrow = "No bigger size:";
-+	private static CharSequence ┬ñ┬ñcantShrink = "No smaller size:";
-+	private static CharSequence ┬ñ┬ñsize = "Size:";
-+	private static CharSequence ┬ñ┬ñoverlap = "Items overlap each other.";
-+	private static CharSequence ┬ñ┬ñwallFloor = "Walls must go on room floor without items.";
-+	private static CharSequence ┬ñ┬ñwallStuck = "The wall can't become room, copy it instead:";
-+	private static CharSequence ┬ñ┬ñnudge = "Nudge room";
-+	private static CharSequence ┬ñ┬ñnudgeDesc = "Click the room to pick it up with its items and doorways, shift it a few tiles, then click to drop it. Right click to cancel.";
-+	private static CharSequence ┬ñ┬ñdoors = "doorways";
-+	private static CharSequence ┬ñ┬ñtooFar = "Too far for one nudge, it wouldn't fit in the undo history. Drop it closer and nudge again.";
-+	private static CharSequence ┬ñ┬ñtooMany = "Too many items to move at once.";
++	private static CharSequence ¤¤select = "Select items";
++	private static CharSequence ¤¤selectDesc = "Drag a rectangle over the items to pick up. Hold {0} when releasing to also select all items of the same types in the room. Hold Alt to also pick up inner walls (all of them with {0}).";
++	private static CharSequence ¤¤wallsHint = "Hold Alt: inner walls too";
++	private static CharSequence ¤¤move = "Move items";
++	private static CharSequence ¤¤copy = "Copy items";
++	private static CharSequence ¤¤items = "items";
++	private static CharSequence ¤¤walls = "wall tiles";
++	private static CharSequence ¤¤offset = "Offset";
++	private static CharSequence ¤¤allOfType = "Hold {0} when releasing: all items of these types";
++	private static CharSequence ¤¤rotate = "Rotate:";
++	private static CharSequence ¤¤cancel = "Right click to cancel.";
++	private static CharSequence ¤¤maxReached = "Max amount of an item is reached.";
++	private static CharSequence ¤¤cantRotate = "Can't be rotated:";
++	private static CharSequence ¤¤cantFlip = "Can't be mirrored:";
++	private static CharSequence ¤¤cantGrow = "No bigger size:";
++	private static CharSequence ¤¤cantShrink = "No smaller size:";
++	private static CharSequence ¤¤size = "Size:";
++	private static CharSequence ¤¤overlap = "Items overlap each other.";
++	private static CharSequence ¤¤wallFloor = "Walls must go on room floor without items.";
++	private static CharSequence ¤¤wallStuck = "The wall can't become room, copy it instead:";
++	private static CharSequence ¤¤nudge = "Nudge room";
++	private static CharSequence ¤¤nudgeDesc = "Click the room to pick it up with its items and doorways, shift it a few tiles, then click to drop it. Right click to cancel.";
++	private static CharSequence ¤¤doors = "doorways";
++	private static CharSequence ¤¤tooFar = "Too far for one nudge, it wouldn't fit in the undo history. Drop it closer and nudge again.";
++	private static CharSequence ¤¤tooMany = "Too many items to move at once.";
 +
 +	static {
 +		D.ts(PlacerItemMove.class);
@@ -349,7 +349,7 @@ index 0000000..ae915dd
 +	private CharSequence cant(int op) {
 +		if (!isCarrying() || blocked[op] == null)
 +			return null;
-+		CharSequence s = op == ROTATE ? ┬ñ┬ñcantRotate : op == GROW ? ┬ñ┬ñcantGrow : op == SHRINK ? ┬ñ┬ñcantShrink : ┬ñ┬ñcantFlip;
++		CharSequence s = op == ROTATE ? ¤¤cantRotate : op == GROW ? ¤¤cantGrow : op == SHRINK ? ¤¤cantShrink : ¤¤cantFlip;
 +		return reason.clear().add(s).s().add(blocked[op].group.name());
 +	}
 +
@@ -607,7 +607,7 @@ index 0000000..ae915dd
 +	// @return why a wall can't go on the tile
 +	private CharSequence wallProblem(int tx, int ty) {
 +		if (!p.instance.is(tx, ty) || SETT.ROOMS().fData.tile.is(tx, ty))
-+			return ┬ñ┬ñwallFloor;
++			return ¤¤wallFloor;
 +		return null;
 +	}
 +
@@ -750,7 +750,7 @@ index 0000000..ae915dd
 +			for (int k = 0; k < wAm && !wStuck; k++) {
 +				CharSequence s = cantBeRoom(wx[k], wy[k]);
 +				if (s != null) {
-+					stuck.clear().add(┬ñ┬ñwallStuck).s().add(s);
++					stuck.clear().add(¤¤wallStuck).s().add(s);
 +					wStuck = true;
 +				}
 +			}
@@ -878,7 +878,7 @@ index 0000000..ae915dd
 +	}
 +
 +	/**
-+	 * Rotates (90┬░ clockwise) or mirrors the selection around the anchor. Every item is swapped for the
++	 * Rotates (90° clockwise) or mirrors the selection around the anchor. Every item is swapped for the
 +	 * variant of its group whose tiles match the turned item. If one has no such variant, nothing changes.
 +	 * Walls, and the floor and doorways of a moved room, turn with the selection and keep their size.
 +	 */
@@ -998,7 +998,7 @@ index 0000000..ae915dd
 +		problem = null;
 +
 +		if (overlaps) {
-+			problem = ┬ñ┬ñoverlap;
++			problem = ¤¤overlap;
 +			return problem;
 +		}
 +
@@ -1019,7 +1019,7 @@ index 0000000..ae915dd
 +				FurnisherItemGroup g = pit[k].group;
 +				groupAm[g.index()]++;
 +				if (p.resources.groups(g) + groupAm[g.index()] > g.max) {
-+					problem = ┬ñ┬ñmaxReached;
++					problem = ¤¤maxReached;
 +					return problem;
 +				}
 +			}
@@ -1046,7 +1046,7 @@ index 0000000..ae915dd
 +	// the new floor must be able to become room, the items must fit on it and the move must fit in one history step
 +	private CharSequence roomProblem() {
 +		if (tooMany)
-+			return ┬ñ┬ñtooMany;
++			return ¤¤tooMany;
 +		int added = 0;
 +		for (int k = 0; k < aAm; k++) {
 +			int x = pax[k]+offX;
@@ -1060,7 +1060,7 @@ index 0000000..ae915dd
 +		}
 +		// the room leaves as many tiles as it gains, each item and doorway is removed and placed
 +		if (2*(added + am + dAm) > HISTORY)
-+			return ┬ñ┬ñtooFar;
++			return ¤¤tooFar;
 +		for (int k = 0; k < am; k++) {
 +			CharSequence s = p.placability.itemProblem(px[k]+offX, py[k]+offY, pit[k].group, pit[k], ghost);
 +			if (s != null)
@@ -1327,18 +1327,18 @@ index 0000000..ae915dd
 +		private boolean hit;
 +
 +		Selector(){
-+			super(┬ñ┬ñselect, ┬ñ┬ñselectDesc, null);
++			super(¤¤select, ¤¤selectDesc, null);
 +		}
 +
 +		@Override
 +		public CharSequence isPlacable(int tx, int ty, AREA area, PLACER_TYPE type) {
 +			if (room)
-+				return p.instance.is(tx, ty) ? null : PlacableMessages.┬ñ┬ñROOM_MUST;
++				return p.instance.is(tx, ty) ? null : PlacableMessages.¤¤ROOM_MUST;
 +			scan();
 +			if (wall(tx, ty) >= 0)
 +				return null;
 +			if (!p.instance.is(tx, ty) || SETT.ROOMS().fData.item.get(tx, ty) == null)
-+				return PlacableMessages.┬ñ┬ñITEM_MUST;
++				return PlacableMessages.¤¤ITEM_MUST;
 +			return null;
 +		}
 +
@@ -1416,22 +1416,22 @@ index 0000000..ae915dd
 +			if (room)
 +				return;
 +			b.NL();
-+			b.text(hint.clear().add(┬ñ┬ñallOfType).insert(0, KEYS.MAIN().MOD.repr()));
++			b.text(hint.clear().add(¤¤allOfType).insert(0, KEYS.MAIN().MOD.repr()));
 +			if (!withWalls) {
 +				b.NL();
-+				b.text(┬ñ┬ñwallsHint);
++				b.text(¤¤wallsHint);
 +			}
 +		}
 +
 +		@Override
 +		public void hoverDesc(GBox box) {
 +			if (room) {
-+				box.title(┬ñ┬ñnudge);
-+				box.text(┬ñ┬ñnudgeDesc);
++				box.title(¤¤nudge);
++				box.text(¤¤nudgeDesc);
 +				return;
 +			}
-+			box.title(copy ? ┬ñ┬ñcopy : ┬ñ┬ñmove);
-+			box.text(hint.clear().add(┬ñ┬ñselectDesc).insert(0, KEYS.MAIN().MOD.repr()).insert(0, KEYS.MAIN().MOD.repr()));
++			box.title(copy ? ¤¤copy : ¤¤move);
++			box.text(hint.clear().add(¤¤selectDesc).insert(0, KEYS.MAIN().MOD.repr()).insert(0, KEYS.MAIN().MOD.repr()));
 +		}
 +
 +	};
@@ -1442,7 +1442,7 @@ index 0000000..ae915dd
 +
 +		@Override
 +		public CharSequence name() {
-+			return room ? ┬ñ┬ñnudge : copy ? ┬ñ┬ñcopy : ┬ñ┬ñmove;
++			return room ? ¤¤nudge : copy ? ¤¤copy : ¤¤move;
 +		}
 +
 +		@Override
@@ -1512,7 +1512,7 @@ index 0000000..ae915dd
 +		@Override
 +		public CharSequence placable(int tx, int ty, int rx, int ry) {
 +			if (gridAt(rx, ry) >= 0 && gridOverlap[rx+ry*(halfW*2+1)])
-+				return ┬ñ┬ñoverlap;
++				return ¤¤overlap;
 +			if (wallAt(rx, ry) >= 0)
 +				return wallProblem(tx, ty);
 +			if (room && floorAt(rx, ry) && !p.instance.is(tx, ty)) {
@@ -1608,27 +1608,27 @@ index 0000000..ae915dd
 +
 +		@Override
 +		public void placeInfo(GBox b, int x1, int y1) {
-+			b.add(b.text().add(am).s().add(┬ñ┬ñitems));
++			b.add(b.text().add(am).s().add(¤¤items));
 +			if (wAm > 0) {
 +				b.tab(4);
-+				b.add(b.text().add(wAm).s().add(┬ñ┬ñwalls));
++				b.add(b.text().add(wAm).s().add(¤¤walls));
 +			}
 +			if (room) {
 +				b.tab(4);
-+				b.add(b.text().add(dAm).s().add(┬ñ┬ñdoors));
++				b.add(b.text().add(dAm).s().add(¤¤doors));
 +			}
 +			b.NL();
-+			b.add(b.text().lablify().add(┬ñ┬ñoffset));
++			b.add(b.text().lablify().add(¤¤offset));
 +			b.tab(4);
 +			b.add(b.text().add(offX).add(',').s().add(offY));
 +			b.NL();
-+			b.add(b.text().add(┬ñ┬ñrotate).s().add(KEYS.MAIN().ROTATE.repr()));
++			b.add(b.text().add(¤¤rotate).s().add(KEYS.MAIN().ROTATE.repr()));
 +			b.NL();
 +			if (!room) {
-+				b.add(b.text().add(┬ñ┬ñsize).s().add(KEYS.MAIN().SHRINK.repr()).add(' ').add('/').add(' ').add(KEYS.MAIN().GROW.repr()));
++				b.add(b.text().add(¤¤size).s().add(KEYS.MAIN().SHRINK.repr()).add(' ').add('/').add(' ').add(KEYS.MAIN().GROW.repr()));
 +				b.NL();
 +			}
-+			b.text(┬ñ┬ñcancel);
++			b.text(¤¤cancel);
 +			if (noteUntil > VIEW.renderSecond()) {
 +				b.NL();
 +				b.error(note);
@@ -1639,7 +1639,7 @@ index 0000000..ae915dd
 +
 +}
 diff --git a/settlement/room/main/placement/RoomPlacer.java b/settlement/room/main/placement/RoomPlacer.java
-index ee879a9..d759f9a 100644
+index 3725d38..e78de3c 100644
 --- a/settlement/room/main/placement/RoomPlacer.java
 +++ b/settlement/room/main/placement/RoomPlacer.java
 @@ -49,6 +49,8 @@ public final class RoomPlacer {
@@ -2079,8 +2079,8 @@ index a1f462d..38f46a0 100644
  
  final class SItems {
  
- 	private static CharSequence ┬ñ┬ñItems = "┬ñitems";
-+	// GOUL: plain text, not in the dictionary yet (D.ts would replace a ┬ñ┬ñ field with its missing key)
+ 	private static CharSequence ¤¤Items = "¤items";
++	// GOUL: plain text, not in the dictionary yet (D.ts would replace a ¤¤ field with its missing key)
 +	private static CharSequence sMove = "Move items";
 +	private static CharSequence sMoveDesc = "Drag a rectangle over items, then move them all with the mouse. Click to drop, right click to cancel. Hold Ctrl when releasing to select all items of the same types. Hold Alt (Ctrl+Alt+X, or Alt+click) to also pick up inner walls. While moving, resize, rotate and mirror the selection.";
 +	private static CharSequence sCopy = "Copy items";
@@ -2093,7 +2093,7 @@ index a1f462d..38f46a0 100644
 +	private static CharSequence sFlipV = "Mirror up-down";
 +	private static CharSequence sFlipVDesc = "Mirrors the moved or copied items vertically.";
  //	private final RENDEROBJ upgrade;
- 	private final RENDEROBJ title = new GHeader(┬ñ┬ñItems).subify();
+ 	private final RENDEROBJ title = new GHeader(¤¤Items).subify();
  	private final GuiSection section = new GuiSection();
 @@ -29,6 +50,13 @@ final class SItems {
  	private final GuiSection stolen = new GuiSection();
@@ -2119,7 +2119,7 @@ index a1f462d..38f46a0 100644
 +		bFlipH = flipButt(arrows(UI.icons().s.arrow_left, UI.icons().s.arrow_right), true, sFlipH, sFlipHDesc); // GOUL
 +		bFlipV = flipButt(arrows(UI.icons().s.arrowUp, UI.icons().s.arrowDown), false, sFlipV, sFlipVDesc); // GOUL
 +
- //		upgrade = new GTarget(32, new GText(UI.FONT().S, DicMisc.┬ñ┬ñUpgrade).lablifySub(), false, true, new INTE() {
+ //		upgrade = new GTarget(32, new GText(UI.FONT().S, DicMisc.¤¤Upgrade).lablifySub(), false, true, new INTE() {
  //			
  //			@Override
 @@ -99,15 +133,163 @@ final class SItems {
@@ -2315,7 +2315,7 @@ index a1f462d..38f46a0 100644
  		
  		@Override
 diff --git a/view/tool/ToolPlacer.java b/view/tool/ToolPlacer.java
-index fa8d370..42c7239 100644
+index 0b7b31c..3c4bba4 100644
 --- a/view/tool/ToolPlacer.java
 +++ b/view/tool/ToolPlacer.java
 @@ -56,7 +56,7 @@ public final class ToolPlacer extends Tool{

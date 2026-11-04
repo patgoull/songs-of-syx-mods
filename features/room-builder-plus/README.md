@@ -1,6 +1,6 @@
 # Room Builder Plus: move/copy items, nudge rooms, redo and hotkeys in the room builder
 
-**Game version:** 0.71.44 · **Patch:** [`patches/room-builder-plus.patch`](../../patches/room-builder-plus.patch)
+**Game version:** 0.71.84 (beta) · **Patch:** [`patches/room-builder-plus.patch`](../../patches/room-builder-plus.patch)
 
 ## Problem
 

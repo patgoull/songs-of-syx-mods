@@ -12,7 +12,7 @@ index 3f2a63e..9362dc5 100644
  	private final GuiSection buttonsIndoor = new GuiSection();
 @@ -180,6 +181,14 @@ class Copier extends PlacableSingle{
  	public Copier(BSwap s) {
- 		super(┬ñ┬ñname, ┬ñ┬ñdesc);
+ 		super(¤¤name, ¤¤desc);
  		this.swap = s;
 +		this.mover = null; // GOUL
 +	}
@@ -130,8 +130,8 @@ index 0000000..23b636c
 + */
 +final class RoomMover {
 +
-+	private static CharSequence ┬ñ┬ñname = "Move Room";
-+	private static CharSequence ┬ñ┬ñdesc = "Moves a room. It's dismantled, recovering some of the resources used to build it, and planned again where you place it, with the same settings. Its old walls and roof are dismantled too, unless something else still needs them.";
++	private static CharSequence ¤¤name = "Move Room";
++	private static CharSequence ¤¤desc = "Moves a room. It's dismantled, recovering some of the resources used to build it, and planned again where you place it, with the same settings. Its old walls and roof are dismantled too, unless something else still needs them.";
 +
 +	static {
 +		D.ts(RoomMover.class);
@@ -144,11 +144,11 @@ index 0000000..23b636c
 +	private final SPRITE icon = SPRITES.icons().l.copyRoom.twin(SPRITES.icons().m.arrow_right, DIR.NE, 1);
 +
 +	CharSequence name() {
-+		return ┬ñ┬ñname;
++		return ¤¤name;
 +	}
 +
 +	CharSequence desc() {
-+		return ┬ñ┬ñdesc;
++		return ¤¤desc;
 +	}
 +
 +	SPRITE icon() {

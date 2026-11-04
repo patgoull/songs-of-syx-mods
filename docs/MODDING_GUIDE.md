@@ -1,7 +1,7 @@
-# Songs of Syx Modding Guide (V71.44)
+# Songs of Syx Modding Guide (V71.84)
 
 Written from an analysis of the [songs-of-syx-mod-example](https://github.com/4rg0n/songs-of-syx-mod-example)
-template **and** checked against the game source shipped with this install (`info/SongsOfSyx-sources.jar`, V71.44).
+template **and** checked against the game source shipped with this install (`info/SongsOfSyx-sources.jar`, V71.44; rechecked against `info/source/SongsOfSyx-sources.jar`, V71.84 beta).
 Where the template docs and the actual game code disagree, this guide follows the code and says so.
 
 ---
@@ -29,7 +29,7 @@ writes `_Info.txt`, and copies everything into the game's mod directory, so you 
 |---|---|
 | Game install | `C:\Steam\steamapps\common\Songs of Syx` |
 | Game jar (all game code, compiled) | `...\Songs of Syx\SongsOfSyx.jar` |
-| Game source code (readable Java) | `...\Songs of Syx\info\SongsOfSyx-sources.jar` (it is a zip) |
+| Game source code (readable Java) | `...\Songs of Syx\info\source\SongsOfSyx-sources.jar` (it is a zip; 71.84, next to `DIFF_0_71_xx.txt` changelogs. `info\SongsOfSyx-sources.jar` is a stale 71.79 copy) |
 | Vanilla data (configs, sprites, audio) | `...\Songs of Syx\base\data.zip` → `data/assets/...` (1800 files) |
 | Official example scripts (by the dev) | `...\Songs of Syx\base\script\000_Tutorial.jar`, `001_Tutorial.jar` |
 | Bundled Java runtime | `...\Songs of Syx\jre` (Temurin 21.0.11) |
@@ -42,7 +42,7 @@ writes `_Info.txt`, and copies everything into the game's mod directory, so you 
 **Installed tools:** Java 21 JDK (Azul Zulu 21.0.6) on PATH, IntelliJ IDEA Community 2024.1.1, VS Code, Git.
 **No global Maven**, but the template ships a Maven wrapper (`mvnw.cmd`) and IntelliJ bundles Maven, so you don't need to install it.
 
-**Game version: 71.44**, which is exactly what the template's `pom.xml` targets (`game.version.major=71`, `minor=44`).
+**Game version: 71.84** (Steam beta branch; stable is 71.44, which is what the template's `pom.xml` targets: `game.version.major=71`, `minor=44`).
 
 > ⚠️ The template assumes Steam lives in `C:\Program Files (x86)\Steam`. **Yours is `C:\Steam`.**
 > You must change the paths (see [§6.4](#64-adapting-the-template-to-this-machine)).
@@ -67,6 +67,8 @@ Song Of Goul/                 ← mod folder name (anything you like)
 ```
 
 You can have several version folders (`V69/`, `V71/`) to support several game versions at once.
+Since 71.84 a folder can also name a minor version, e.g. `V71_84/`: when it matches the game version exactly it is used
+*instead of* `V71/` (the whole folder, no merging; see `ModInfo.bestVersion` / `getModFolder`). Older games ignore it.
 
 > **Note: `sound` vs `audio`.** The template's skeleton has `assets/sound/...`, but V71.44 reads
 > audio from `assets/audio/{mono,music,ambience,config}` (see `init/paths/PATHS.java`, `PATHS_AUDIO`),
@@ -77,7 +79,7 @@ You can have several version folders (`V69/`, `V71/`) to support several game ve
 ```
 VERSION: "1.0.0",
 GAME_VERSION_MAJOR: 71,
-GAME_VERSION_MINOR: 44,
+GAME_VERSION_MINOR: 84,
 NAME: "Song Of Goul",
 DESC: "What the mod does.",
 AUTHOR: "Patrick",

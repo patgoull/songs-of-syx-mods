@@ -352,7 +352,7 @@ public final class RoomPlacer {
 		Coo.TMP.set(instance.mX(), instance.mY());
 		TmpArea tmp = SETT.ROOMS().tmpArea(this);
 		tmp.set(instance, instance.mX(), instance.mY());
-		SETT.ROOMS().construction.createWithConstructionData(tmp, init);
+		SETT.ROOMS().construction.createWithConstructionData(tmp, init, false);
 		instance.clearRegardless();
 		return Coo.TMP;
 	}

@@ -9,7 +9,7 @@ param(
 	[Parameter(Mandatory = $true)][string]$Feature,
 	[switch]$Install,
 	[string]$GameDir = "C:\Steam\steamapps\common\Songs of Syx",
-	[string]$GameVersion = "71.44"
+	[string]$GameVersion = "71.84"
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,6 +62,9 @@ Write-Host "Built $modDir"
 $patchDir = Join-Path $root "patches"
 New-Item -ItemType Directory -Force $patchDir | Out-Null
 $patch = New-Object System.Text.StringBuilder
+# git prints UTF-8; without this PowerShell decodes it with the console code page and garbles non-ASCII text (the game's currency-sign text keys)
+$oldEncoding = [Console]::OutputEncoding
+[Console]::OutputEncoding = $utf8
 Push-Location $root
 try {
 	foreach ($f in $sources) {
@@ -76,6 +79,7 @@ try {
 	}
 } finally {
 	Pop-Location
+	[Console]::OutputEncoding = $oldEncoding
 }
 $patchFile = Join-Path $patchDir "$Feature.patch"
 [IO.File]::WriteAllText($patchFile, $patch.ToString(), $utf8)

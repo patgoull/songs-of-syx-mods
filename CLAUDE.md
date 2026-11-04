@@ -7,19 +7,24 @@ Full guide: [docs/MODDING_GUIDE.md](docs/MODDING_GUIDE.md).
 edit of a copied vanilla class, in Jake's style, with no Lombok and one feature per patch. Not using the template's Maven. See [docs/STRATEGY.md](docs/STRATEGY.md).
 
 ## Environment
-- Game: **V71.44**, `C:\Steam\steamapps\common\Songs of Syx` (NOT `Program Files (x86)`; template paths must be changed)
-- Game source: `info/SongsOfSyx-sources.jar` (zip). Vanilla data: `base/data.zip` → `data/assets/{init,text,sprite,audio}`
+- Game: **V71.84** (Steam beta branch; stable is 71.44), `C:\Steam\steamapps\common\Songs of Syx` (NOT `Program Files (x86)`; template paths must be changed)
+- Game source: `info/source/SongsOfSyx-sources.jar` (zip, 71.84) plus `info/source/DIFF_0_71_xx.txt` changelogs per patch.
+  `info/SongsOfSyx-sources.jar` is a stale 71.79 copy, don't use it. Vanilla data: `base/data.zip` → `data/assets/{init,text,sprite,audio}`
 - Dev mods folder: `%APPDATA%\songsofsyx\mods`; logs: `%APPDATA%\songsofsyx\logs`
 - Workshop: `C:\Steam\steamapps\workshop\content\1162750`
 - JDK 21 (Zulu) on PATH; IntelliJ IDEA CE 2024.1.1; no global Maven, so use the template's `mvnw.cmd`
 - Template: https://github.com/4rg0n/songs-of-syx-mod-example (targets 71.44)
 
-## Facts verified in V71.44 source (trust over template docs)
+## Facts verified in V71.44 source, rechecked in 71.84 (trust over template docs)
 - Mod layout: `<Mod>/_Info.txt` + `<Mod>/V71/{assets,script,saves,examples,campaigns}`
+- Since 71.84 (`init/paths/ModInfo.java`): a `<Mod>/V71_84/` folder, if present and matching the game version exactly, is used
+  *instead of* `V71/` (no merging). 71.44 ignores it. Lets one mod ship builds for several minor versions.
+- Game updates can rename methods or move classes (71.84: `CONSTRUCTION.createWithConstructionData` got a 3rd arg,
+  `snake2d.PathUtilOnline` → `snake2d.pathing`). Old jars then fail at runtime, so rebuild every feature after an update.
 - Audio folder is `assets/audio` (template skeleton wrongly says `sound`)
 - Config merge (`snake2d/util/file/Json.java`): same-named mod file layered on vanilla; top-level keys replace;
   `_JSON_ADD` = recursive object merge; `_ARRAY_ADD` = append arrays; `_IgnoreVanilla.txt` in a folder drops vanilla files.
-  `__OVERWRITE` (in template docs) isn't present in 71.44 code.
+  `__OVERWRITE` (in template docs) isn't present in 71.44 or 71.84 code.
 - `TEXTURE_CACHE_SIZE` ∈ {4096, 8192, 16384}, default 4096 (`init/paths/ModInfo.java`)
 - Scripts (`script/ScriptLoad.java`): all classes in `V71/script/*.jar` are loaded on the system classloader; every non-abstract
   `script.SCRIPT` with a public no-arg ctor is a script. `createInstance()` runs after VIEW exists, so inject UI there.
