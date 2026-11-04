@@ -19,7 +19,9 @@ It's the Room Copier with one difference: when you place the copy, the original 
    - the room is planned at the new spot with the same settings (upgrade, workers' settings, etc.) and its walls and doorways
    - for indoor rooms with walls on (the copier's wall button), the old walls and roof are queued for Dismantle Structure,
      except those still needed: next to a room (the new one, or a neighbour sharing a wall) or next to a roofed tile
-     further out (a corridor). Mountain walls, fences, and tiles that already have a job are left alone.
+     further out (a corridor). Mountain walls, fences, and tiles that already have another job are left alone.
+   - walls and doorways that were only planned (a construction site, e.g. a fresh Room Copier copy) are cancelled by
+     the same rule instead, so moving an unbuilt copy works like planning it there in the first place
 4. The tool goes back to step 1 for the next room.
 
 The room stops working until the new one is built, the same as copy + dismantle by hand. Moving costs the 25% that
@@ -29,7 +31,7 @@ dismantling loses, plus the labour.
 
 | File | Change |
 |---|---|
-| `settlement/room/main/copy/RoomMover.java` | **New.** Reads the room's tiles and items, dismantles it (`ROOMS().DELETE`), and afterwards queues Dismantle Structure on the old walls and roof nothing needs |
+| `settlement/room/main/copy/RoomMover.java` | **New.** Reads the room's tiles and items, dismantles it (`ROOMS().DELETE`), and afterwards queues Dismantle Structure on the old walls and roof nothing needs, and cancels the old planned wall and doorway jobs (`JobBuildStructure` wall/ceiling) nothing needs |
 | `settlement/room/main/copy/Copier.java` | A second constructor taking a `RoomMover`. In move mode: the source tiles may be overlapped, the room is read and dismantled before the copy is built, items are read from the mover, then the old structure is dismantled and the tool goes back to picking a room. Two lines moved up (the room's upgrade and state are read before it's gone), the item lookup goes through `master()` |
 | `settlement/room/main/copy/ROOM_COPY.java` | 6 lines: a second `Copier` and its `move()` getter |
 | `view/sett/ui/bottom/Options.java` | 1 line: the menu entry |
@@ -51,5 +53,8 @@ Enable **Goul - Move Room** in the launcher, then, in a save with built rooms:
 - [ ] Turn off the walls button: the room moves without walls, and the old walls and roof stay.
 - [ ] An outdoor room (a farm or a well): it moves, no structure is touched.
 - [ ] A room under construction: it moves too.
+- [ ] Copy an indoor room with the Room Copier, then right away Move Room the copy a few tiles: the old planned walls
+      and doorways are cancelled, where they're not next to the new room. Where the two overlap, the walls stay planned.
+- [ ] Same with a planned corridor (ceiling jobs) next to the copy's doorway: the corridor keeps its planned walls.
 - [ ] After the new site is built, the room has the old settings (e.g. a workshop's recipe).
 - [ ] The throne can't be picked.

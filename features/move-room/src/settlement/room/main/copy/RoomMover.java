@@ -2,6 +2,7 @@ package settlement.room.main.copy;
 
 import init.sprite.SPRITES;
 import settlement.job.Job;
+import settlement.job.JobBuildStructure;
 import settlement.main.SETT;
 import settlement.room.main.ROOMA;
 import settlement.room.main.furnisher.FurnisherItem;
@@ -85,7 +86,8 @@ final class RoomMover {
 	/**
 	 * Queues Dismantle Structure on the building walls and roof on and next to the old room, unless they're a room,
 	 * a job (the new room's walls are jobs by now), or still needed: next to a room, or next to a roofed tile
-	 * further out (a corridor) that they enclose.
+	 * further out (a corridor) that they enclose. Walls and doorways that were only planned (a construction site
+	 * nobody has walled yet) are cancelled instead, by the same rule.
 	 */
 	void dismantle() {
 		Job job = SETT.JOBS().clearss.structure;
@@ -93,6 +95,11 @@ final class RoomMover {
 			for (int tx = body.x1()-1; tx <= body.x2(); tx++) {
 				if (!SETT.IN_BOUNDS(tx, ty) || !onOrNextToOld(tx, ty) || SETT.ROOMS().map.is(tx, ty))
 					continue;
+				if (planned(tx, ty, false)) {
+					if (!needed(tx, ty))
+						SETT.JOBS().clearer.set(tx, ty);
+					continue;
+				}
 				if (SETT.JOBS().getter.get(tx, ty) != null || !(SETT.TERRAIN().get(tx, ty) instanceof TBuilding.BuildingComponent))
 					continue;
 				if (needed(tx, ty))
@@ -121,7 +128,23 @@ final class RoomMover {
 				continue;
 			if (SETT.ROOMS().map.is(x, y))
 				return true;
-			if (UtilWallPlacability.openingIsReal.is(x, y) && !onOrNextToOld(x, y))
+			if ((UtilWallPlacability.openingIsReal.is(x, y) || planned(x, y, true)) && !onOrNextToOld(x, y))
+				return true;
+		}
+		return false;
+	}
+
+	/**
+	 * @return whether a wall (unless ceilingOnly) or a ceiling (a doorway, or a planned corridor) is planned here,
+	 * as a building job not done yet
+	 */
+	private static boolean planned(int tx, int ty, boolean ceilingOnly) {
+		Job j = SETT.JOBS().getter.get(tx, ty);
+		if (j == null)
+			return false;
+		for (int i = 0; i < SETT.JOBS().build_structure.size(); i++) {
+			JobBuildStructure s = SETT.JOBS().build_structure.get(i);
+			if (j == s.ceiling || (!ceilingOnly && j == s.wall))
 				return true;
 		}
 		return false;
