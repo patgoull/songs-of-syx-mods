@@ -4,7 +4,7 @@ Quality-of-life suggestions for [Songs of Syx](https://store.steampowered.com/ap
 mods so they can be tried in game and, if wanted, merged into the game.
 
 **For Jake:** each feature is a small, patch-style change to the game's own classes, in the game's code style.
-Every change is marked `// GOUL`, and each feature comes with a ready-to-read diff against vanilla V71.84 (beta) in
+Every change is marked `// GOUL`, and each feature comes with a ready-to-read diff against vanilla V71.86 (beta) in
 [`patches/`](patches/). The diffs are mostly additive; the few changed vanilla lines are listed in each feature's README.
 
 ## Features
@@ -24,8 +24,8 @@ Every change is marked `// GOUL`, and each feature comes with a ready-to-read di
 
 ## Building
 
-Needs a JDK 21 and the game on the 71.84 beta. Extract `info/source/SongsOfSyx-sources.jar` from the game folder into
-`vanilla/71.84/` (only used to write the patches), then:
+Needs a JDK 21 and the game on the 71.86 beta. Extract `info/source/SongsOfSyx-sources.jar` from the game folder into
+`vanilla/71.86/` (only used to write the patches), then:
 
 ```powershell
 .\build.ps1 room-builder-plus -Install   # compiles against SongsOfSyx.jar, installs to %APPDATA%\songsofsyx\mods

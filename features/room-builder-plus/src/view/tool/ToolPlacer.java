@@ -212,7 +212,7 @@ public final class ToolPlacer extends Tool{
 	@Override
 	public void click(GameWindow window) {
 		pressed = true;
-		current.click(window);
+		current.click(window, current != origional);
 		
 	}
 	
@@ -221,11 +221,11 @@ public final class ToolPlacer extends Tool{
 		
 
 		if (pressed && !MButt.LEFT.isDown()) {
-			current.clickRelease(window);
+			current.clickRelease(window, current != origional);
 		}
 		update(ds, window);
 		
-		current.updateHovered(ds, window, pressed);
+		current.updateHovered(ds, window, pressed, current != origional);
 	}
 
 	@Override
@@ -313,13 +313,13 @@ public final class ToolPlacer extends Tool{
 		placeFunc(){
 		}
 		
-		abstract void updateHovered(float ds, GameWindow window, boolean pressed);
+		abstract void updateHovered(float ds, GameWindow window, boolean pressed, boolean isUndo);
 		void update(float ds, GameWindow window, boolean pressed) {
 			
 		}
 		abstract void render(SPRITE_RENDERER r, float ds, GameWindow window);
-		abstract void click(GameWindow window);
-		abstract void clickRelease(GameWindow window);
+		abstract void click(GameWindow window, boolean isUndo);
+		abstract void clickRelease(GameWindow window, boolean isUndo);
 		abstract void activate(PLACABLE placer, GameWindow window);
 		abstract LIST<CLICKABLE> gui();
 	}

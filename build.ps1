@@ -9,7 +9,7 @@ param(
 	[Parameter(Mandatory = $true)][string]$Feature,
 	[switch]$Install,
 	[string]$GameDir = "C:\Steam\steamapps\common\Songs of Syx",
-	[string]$GameVersion = "71.84"
+	[string]$GameVersion = "71.86"
 )
 
 $ErrorActionPreference = "Stop"

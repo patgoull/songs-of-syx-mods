@@ -7,8 +7,8 @@ Full guide: [docs/MODDING_GUIDE.md](docs/MODDING_GUIDE.md).
 edit of a copied vanilla class, in Jake's style, with no Lombok and one feature per patch. Not using the template's Maven. See [docs/STRATEGY.md](docs/STRATEGY.md).
 
 ## Environment
-- Game: **V71.84** (Steam beta branch; stable is 71.44), `C:\Steam\steamapps\common\Songs of Syx` (NOT `Program Files (x86)`; template paths must be changed)
-- Game source: `info/source/SongsOfSyx-sources.jar` (zip, 71.84) plus `info/source/DIFF_0_71_xx.txt` changelogs per patch.
+- Game: **V71.86** (Steam beta branch; stable is 71.44), `C:\Steam\steamapps\common\Songs of Syx` (NOT `Program Files (x86)`; template paths must be changed)
+- Game source: `info/source/SongsOfSyx-sources.jar` (zip, 71.86) plus `info/source/DIFF_0_71_xx.txt` changelogs per patch.
   `info/SongsOfSyx-sources.jar` is a stale 71.79 copy, don't use it. Vanilla data: `base/data.zip` → `data/assets/{init,text,sprite,audio}`
 - Dev mods folder: `%APPDATA%\songsofsyx\mods`; logs: `%APPDATA%\songsofsyx\logs`
 - Workshop: `C:\Steam\steamapps\workshop\content\1162750`
@@ -21,6 +21,9 @@ edit of a copied vanilla class, in Jake's style, with no Lombok and one feature 
   *instead of* `V71/` (no merging). 71.44 ignores it. Lets one mod ship builds for several minor versions.
 - Game updates can rename methods or move classes (71.84: `CONSTRUCTION.createWithConstructionData` got a 3rd arg,
   `snake2d.PathUtilOnline` → `snake2d.pathing`). Old jars then fail at runtime, so rebuild every feature after an update.
+- A clean compile isn't enough: also diff every copied vanilla class against the new vanilla and re-copy changed ones.
+  javac only rebuilds our copy, so a stale copy still compiles but breaks the unchanged vanilla code that calls into it
+  (71.86: `ToolPlacer.placeFunc` methods gained an `isUndo` arg, and a stale copy throws `AbstractMethodError` on the first click).
 - Audio folder is `assets/audio` (template skeleton wrongly says `sound`)
 - Config merge (`snake2d/util/file/Json.java`): same-named mod file layered on vanilla; top-level keys replace;
   `_JSON_ADD` = recursive object merge; `_ARRAY_ADD` = append arrays; `_IgnoreVanilla.txt` in a folder drops vanilla files.

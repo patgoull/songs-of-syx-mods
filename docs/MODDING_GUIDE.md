@@ -1,4 +1,4 @@
-# Songs of Syx Modding Guide (V71.84)
+# Songs of Syx Modding Guide (V71.86)
 
 Written from an analysis of the [songs-of-syx-mod-example](https://github.com/4rg0n/songs-of-syx-mod-example)
 template **and** checked against the game source shipped with this install (`info/SongsOfSyx-sources.jar`, V71.44; rechecked against `info/source/SongsOfSyx-sources.jar`, V71.84 beta).
@@ -42,7 +42,7 @@ writes `_Info.txt`, and copies everything into the game's mod directory, so you 
 **Installed tools:** Java 21 JDK (Azul Zulu 21.0.6) on PATH, IntelliJ IDEA Community 2024.1.1, VS Code, Git.
 **No global Maven**, but the template ships a Maven wrapper (`mvnw.cmd`) and IntelliJ bundles Maven, so you don't need to install it.
 
-**Game version: 71.84** (Steam beta branch; stable is 71.44, which is what the template's `pom.xml` targets: `game.version.major=71`, `minor=44`).
+**Game version: 71.86** (Steam beta branch; stable is 71.44, which is what the template's `pom.xml` targets: `game.version.major=71`, `minor=44`).
 
 > ⚠️ The template assumes Steam lives in `C:\Program Files (x86)\Steam`. **Yours is `C:\Steam`.**
 > You must change the paths (see [§6.4](#64-adapting-the-template-to-this-machine)).
