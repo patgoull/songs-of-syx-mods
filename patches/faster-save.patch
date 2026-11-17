@@ -1,0 +1,53 @@
+diff --git a/init/sprite/RLoadPrinter.java b/init/sprite/RLoadPrinter.java
+index 1734d33..5f80156 100644
+--- a/init/sprite/RLoadPrinter.java
++++ b/init/sprite/RLoadPrinter.java
+@@ -44,6 +44,7 @@ public class RLoadPrinter {
+ 	private final Str regularThing = new Str(24);
+ 	private CharSequence miniText;
+ 	private int miniI;
++	private long miniLast; // GOUL: time of the last minified print
+ 	private int regularI;
+ 	private final int miniD;
+ 	private final RENDEROBJ loadingBig = UI.decor().getDecored(Dic.¤¤loading);
+@@ -99,11 +100,18 @@ public class RLoadPrinter {
+ 		minified = minify;
+ 		miniText = title;
+ 		miniI = 0;
++		miniLast = System.nanoTime() - 1000000000L; // GOUL: the first print draws
+ 		
+ 	}
+ 	
+ 	public void print(CharSequence string){
+ 		if (minified) {
++			// GOUL: each print draws the whole game and waits for the screen, and a save prints 31 times: that was a third
++			// of the save. Only the dots move, so drawing at most every 100 ms looks the same.
++			long now = System.nanoTime();
++			if (now - miniLast < 100000000L)
++				return;
++			miniLast = now;
+ 			
+ 			CORE.renderer().clear();
+ 			TIME.light().applyGuiLight(0, C.DIM());
+diff --git a/snake2d/util/file/FilePutter.java b/snake2d/util/file/FilePutter.java
+index eae360e..f097805 100644
+--- a/snake2d/util/file/FilePutter.java
++++ b/snake2d/util/file/FilePutter.java
+@@ -1,5 +1,6 @@
+ package snake2d.util.file;
+ 
++import java.io.BufferedOutputStream;
+ import java.io.File;
+ import java.io.FileOutputStream;
+ import java.io.IOException;
+@@ -104,7 +105,9 @@ public final class FilePutter {
+ 					f.setWritable(true);
+ 					
+ 					FileOutputStream outStream = new FileOutputStream(f);
+-					DeflaterOutputStream defl = new DeflaterOutputStream(outStream, true);
++					// GOUL: was (outStream, true). The deflater writes 512 bytes at a time, each a write to the disk; buffered, the
++					// same bytes go in 64 KB writes
++					DeflaterOutputStream defl = new DeflaterOutputStream(new BufferedOutputStream(outStream, 1 << 16), true);
+ 					buffer.flip();
+ 					
+ 					ByteBuffer b = ByteBuffer.allocate(4);

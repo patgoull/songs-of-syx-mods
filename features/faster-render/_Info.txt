@@ -1,0 +1,7 @@
+VERSION: "0.0.1",
+GAME_VERSION_MAJOR: 71,
+GAME_VERSION_MINOR: 90,
+NAME: "Goul - Faster Render",
+DESC: "Draws the city faster: lights look up the tiles around them once instead of many times per frame. Same picture.",
+AUTHOR: "Goul",
+INFO: "Patch-style mod, replaces PointRayTracer. See patches/faster-render.patch",

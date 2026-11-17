@@ -1,0 +1,463 @@
+diff --git a/init/paths/VirtualFolder.java b/init/paths/VirtualFolder.java
+index 49eb613..2722217 100644
+--- a/init/paths/VirtualFolder.java
++++ b/init/paths/VirtualFolder.java
+@@ -6,6 +6,7 @@ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.util.Arrays;
+ import java.util.HashSet;
++import java.util.concurrent.ConcurrentHashMap;
+ 
+ import snake2d.Errors;
+ import snake2d.util.sets.LIST;
+@@ -33,10 +34,28 @@ final class VirtualFolder {
+ 
+ 	}
+ 	
++	// GOUL: for the game's roots (each enabled mod's V71 folder, then the vanilla data zip), whether this folder exists in
++	// each root, checked once per folder instead of on every file lookup. Nothing under a missing folder can exist, and
++	// the roots don't change while the game runs. A mod without assets (code only) has no assets folder, so every file
++	// lookup checked that mod's missing folder on disk, which is slow on Windows.
++	private static final ConcurrentHashMap<Path, Boolean> goulFolders = new ConcurrentHashMap<>();
++	
++	private boolean goulHas(Path root) {
++		if (PATHS.i == null || bases != PATHS.i.paths)
++			return true;
++		Path f = resolve(root, null);
++		Boolean b = goulFolders.get(f);
++		if (b == null) {
++			b = Files.exists(f);
++			goulFolders.put(f, b);
++		}
++		return b;
++	}
++	
+ 	private void validate() {
+ 		for (Path p : bases) {
+ 			Path f = resolve(p, null);
+-			if (Files.exists(f)) {
++			if (goulHas(p) && Files.exists(f)) { // GOUL: was Files.exists(f)
+ 				if (!Files.isDirectory(f))
+ 					throw new Errors.DataError("This file is not a directory: .",
+ 							f.toAbsolutePath());
+@@ -74,7 +93,7 @@ final class VirtualFolder {
+ 		
+ 		for (Path root : bases) {
+ 			Path p = resolve(root, r);
+-			if (Files.exists(p)) {
++			if (goulHas(root) && Files.exists(p)) { // GOUL: was Files.exists(p)
+ 				am++;
+ 			}
+ 		}
+@@ -84,7 +103,7 @@ final class VirtualFolder {
+ 		
+ 		for (Path root : bases) {
+ 			Path p = resolve(root, r);
+-			if (Files.exists(p)) {
++			if (goulHas(root) && Files.exists(p)) { // GOUL: was Files.exists(p)
+ 				validate(p);
+ 				pps[am++] = p;
+ 			}
+@@ -98,7 +117,7 @@ final class VirtualFolder {
+ 	public boolean exists(CharSequence file, CharSequence filetype) {
+ 		String f = ""+file+filetype;
+ 		for (Path m : bases) {
+-			if (check(resolve(m, f)))
++			if (goulHas(m) && check(resolve(m, f))) // GOUL: was check(resolve(m, f))
+ 				return true;
+ 		}
+ 		return false;
+@@ -111,7 +130,7 @@ final class VirtualFolder {
+ 		
+ 		for (Path root : bases) {
+ 			Path p = resolve(root, r);
+-			if (Files.exists(p)) {
++			if (goulHas(root) && Files.exists(p)) { // GOUL: was Files.exists(p)
+ 				validate(p);
+ 				return p;
+ 			}
+diff --git a/settlement/environment/EUpdater.java b/settlement/environment/EUpdater.java
+index 335c79f..ffd57d4 100644
+--- a/settlement/environment/EUpdater.java
++++ b/settlement/environment/EUpdater.java
+@@ -271,36 +271,153 @@ abstract class EUpdater {
+ 			
+ 		}
+ 		
++		// GOUL: the open tiles of flood2(), in a binary max-heap over the bounds, instead of the shared Flooder's tree
++		// (a red-black tree of tile objects). All costs are positive, so a tile's value is final when it comes out, and
++		// the values are the same whichever order equal tiles come out in. Same float values and checks as Flooder.
++		// Neighbours that are already closed are skipped (pushGreater did nothing for them), and each tile's getCost(),
++		// which only reads the map, is read once per flood instead of once per neighbour.
++		private float[] hVal = new float[0];
++		private byte[] hState = new byte[0]; // 0 not pushed, 1 open, 2 closed
++		private int[] hHeap = new int[0];
++		private int[] hPos = new int[0];
++		private double[] hCost = new double[0]; // getCost() of the tile, read once per flood
++		private boolean[] hCostRead = new boolean[0];
++		private int hSize;
++		private final int[] hDx = new int[8], hDy = new int[8]; // DIR.ALL, in the same order
++		private final double[] hDist = new double[8];
++		{
++			for (int k = 0; k < 8; k++) {
++				hDx[k] = DIR.ALL.get(k).x();
++				hDy[k] = DIR.ALL.get(k).y();
++				hDist[k] = DIR.ALL.get(k).tileDistance();
++			}
++		}
++		
++		private void hInit(int n) {
++			if (hVal.length < n) {
++				hVal = new float[n];
++				hState = new byte[n];
++				hHeap = new int[n];
++				hPos = new int[n];
++				hCost = new double[n];
++				hCostRead = new boolean[n];
++			}
++			for (int i = 0; i < n; i++) {
++				hState[i] = 0;
++				hCostRead[i] = false;
++			}
++			hSize = 0;
++		}
++		
++		// Flooder.pushGreater
++		private void hPush(int i, double value) {
++			if (hState[i] != 0) {
++				if (hVal[i] >= value)
++					return;
++				if (hState[i] == 2)
++					return;
++				hVal[i] = (float) value;
++				hUp(hPos[i]);
++				return;
++			}
++			hState[i] = 1;
++			hVal[i] = (float) value;
++			hHeap[hSize] = i;
++			hPos[i] = hSize;
++			hUp(hSize++);
++		}
++		
++		// Flooder.pollGreatest
++		private int hPoll() {
++			int top = hHeap[0];
++			hSize--;
++			if (hSize > 0) {
++				hHeap[0] = hHeap[hSize];
++				hPos[hHeap[0]] = 0;
++				hDown(0);
++			}
++			hState[top] = 2;
++			return top;
++		}
++		
++		private void hUp(int k) {
++			int i = hHeap[k];
++			while (k > 0) {
++				int p = (k-1) >> 1;
++				if (hVal[hHeap[p]] >= hVal[i])
++					break;
++				hHeap[k] = hHeap[p];
++				hPos[hHeap[k]] = k;
++				k = p;
++			}
++			hHeap[k] = i;
++			hPos[i] = k;
++		}
++		
++		private void hDown(int k) {
++			int i = hHeap[k];
++			while (true) {
++				int c = 2*k+1;
++				if (c >= hSize)
++					break;
++				if (c+1 < hSize && hVal[hHeap[c+1]] > hVal[hHeap[c]])
++					c++;
++				if (hVal[hHeap[c]] <= hVal[i])
++					break;
++				hHeap[k] = hHeap[c];
++				hPos[hHeap[k]] = k;
++				k = c;
++			}
++			hHeap[k] = i;
++			hPos[i] = k;
++		}
++		
+ 		private void flood2(Flooder f, RECTANGLE bounds, RECTANGLE area, SettEnv thing) {
+-
++			
+ 			double r = 1.0/thing.radius();
++			int bx = bounds.x1();
++			int by = bounds.y1();
++			int bx2 = bounds.x2();
++			int by2 = bounds.y2();
++			int w = bx2-bx;
++			hInit(w*(by2-by));
+ 			
+ 			for (COORDINATE c : bounds) {
+ 				double b = thing.getBaseValue(c.x(), c.y())*RADIUS;
+ 				if (b > 0) {
+-					f.pushGreater(c, b);
++					hPush(c.x()-bx + (c.y()-by)*w, b);
+ 				}
+ 			}
+ 
+-			while (f.hasMore()) {
+-				PathTile t = f.pollGreatest();
+-				double value = t.getValue();
++			while (hSize > 0) {
++				int i = hPoll();
++				double value = hVal[i];
++				int x = bx + i%w;
++				int y = by + i/w;
+ 
+-				for (DIR d : DIR.ALL) {
+-					int tx = t.x() + d.x();
+-					int ty = t.y() + d.y();
+-					if (bounds.holdsPoint(tx, ty)) {
+-						double v = value - d.tileDistance() * thing.getCost(tx, ty)*r;
++				for (int k = 0; k < 8; k++) {
++					int tx = x + hDx[k];
++					int ty = y + hDy[k];
++					if (tx >= bx && tx < bx2 && ty >= by && ty < by2) { // bounds.holdsPoint
++						int ni = tx-bx + (ty-by)*w;
++						if (hState[ni] == 2) // a closed tile is never changed, so its cost isn't needed
++							continue;
++						if (!hCostRead[ni]) {
++							hCost[ni] = thing.getCost(tx, ty);
++							hCostRead[ni] = true;
++						}
++						double v = value - hDist[k] * hCost[ni]*r;
+ 						if (v > 0) {
+-							f.pushGreater(tx, ty, v);
++							hPush(ni, v);
+ 						}
+ 					}
+ 				}
+ 			}
+ 
+ 			for (COORDINATE c : area) {
+-				if (f.hasBeenPushed(c.x(), c.y())) {
+-					int v = (int) Math.ceil(thing.max * f.getValue(c)*maxRadiusI);
++				int i = c.x()-bx + (c.y()-by)*w;
++				if (hState[i] != 0) {
++					int v = (int) Math.ceil(thing.max * hVal[i]*maxRadiusI);
+ 					v = CLAMP.i(v, 0, thing.max);
+ 					thing.map.set(c.x() + c.y() * SETT.TWIDTH, v);
+ 				}
+diff --git a/settlement/environment/SettEnvMap.java b/settlement/environment/SettEnvMap.java
+index 2c4a055..1f97b96 100644
+--- a/settlement/environment/SettEnvMap.java
++++ b/settlement/environment/SettEnvMap.java
+@@ -249,6 +249,7 @@ public final class SettEnvMap {
+ 	protected void init() {
+ 
+ 		
++		SHAPE.goulCache(true); // GOUL: walls don't change during init(), the shape pass reads each tile's wall direction once
+ 		for (Updatable s : ups) {
+ 			s.clear();
+ 		}
+@@ -270,6 +271,7 @@ public final class SettEnvMap {
+ 			updater.update(c.x(), c.y(), m);
+ 			
+ 		}
++		SHAPE.goulCache(false); // GOUL
+ 
+ 	}
+ 	
+diff --git a/settlement/environment/SettEnvShape.java b/settlement/environment/SettEnvShape.java
+index b2c138a..70c5f54 100644
+--- a/settlement/environment/SettEnvShape.java
++++ b/settlement/environment/SettEnvShape.java
+@@ -163,7 +163,29 @@ public final class SettEnvShape extends SettEnvMap.Updatable{
+ 		return false;
+ 	}
+ 	
++	// GOUL: getWallDIR() per tile while SettEnvMap.init() runs (0 = not read yet, 1 = null, 2+ = index in DIR.ALL).
++	// The chunks it updates overlap, so it was worked out for each tile many times over.
++	private byte[] goulDir;
++	
++	void goulCache(boolean on) {
++		goulDir = on ? new byte[SETT.TAREA] : null;
++	}
++	
+ 	public DIR getWallDIR(int tx, int ty) {
++		if (goulDir == null || !SETT.IN_BOUNDS(tx, ty))
++			return wallDIR(tx, ty);
++		int i = tx + ty*SETT.TWIDTH;
++		if (goulDir[i] == 0) {
++			DIR d = wallDIR(tx, ty);
++			int k = 0;
++			while (d != null && DIR.ALL.get(k) != d)
++				k++;
++			goulDir[i] = (byte) (d == null ? 1 : 2 + k);
++		}
++		return goulDir[i] == 1 ? null : DIR.ALL.get(goulDir[i]-2);
++	}
++	
++	private DIR wallDIR(int tx, int ty) { // GOUL: was getWallDIR
+ 		
+ 		if (wall.is(tx, ty))
+ 			return null;
+diff --git a/settlement/environment/SettOrganics.java b/settlement/environment/SettOrganics.java
+index d2f72bd..4479e28 100644
+--- a/settlement/environment/SettOrganics.java
++++ b/settlement/environment/SettOrganics.java
+@@ -47,6 +47,12 @@ public final class SettOrganics {
+ 
+ 	public void init() {
+ 		chunks.clear();
++		// GOUL: the walls are read once, QuickSum and getDist() test each tile ~10 and up to ~190 times over the overlapping chunks
++		wallCache = new Bitmap1D(SETT.TAREA, false);
++		for (int ty = 0; ty < SETT.THEIGHT; ty++)
++			for (int tx = 0; tx < SETT.TWIDTH; tx++)
++				if (wall.is(tx, ty))
++					wallCache.set(tx + ty*SETT.TWIDTH, true);
+ 		Rec rec = new Rec(CHUNK_SIZE);
+ 		for (int cy = 0; cy < SETT.THEIGHT; cy+=CHUNK_SIZE) {
+ 			for (int cx = 0; cx < SETT.TWIDTH; cx+=CHUNK_SIZE) {
+@@ -54,6 +60,7 @@ public final class SettOrganics {
+ 				update(rec);
+ 			}
+ 		}
++		wallCache = null; // GOUL
+ 		
+ 	}
+     
+@@ -78,7 +85,7 @@ public final class SettOrganics {
+         	if (!SETT.IN_BOUNDS(c))
+         		continue;
+         	
+-        	if (wall.is(c)) {
++        	if (wallIs(c.x(), c.y())) { // GOUL: was wall.is(c)
+         		map.set(c, 0);
+         		continue;
+         	}
+@@ -136,12 +143,25 @@ public final class SettOrganics {
+ 		for (int i = 1; i < searchSize; i++) {
+ 			int x = wx+n.x()*i;
+ 			int y = wy+n.y()*i;
+-			if (wall.is(x, y))
++			if (wallIs(x, y)) // GOUL: was wall.is(x, y)
+ 				return i;
+ 		}
+ 		return searchSize;
+ 	}
+ 
++	// GOUL: wall.is(tx, ty). QuickSum has already read the walls of the square around the chunk being updated, which
++	// holds every tile getDist() reaches, so in the game too each tile is read once per update instead of up to ~125 times.
++	// While init() runs, from the bitmap (tiles outside the map are asked directly, as before)
++	private Bitmap1D wallCache;
++	
++	private boolean wallIs(int tx, int ty) {
++		if (sum.holds(tx, ty))
++			return sum.count(tx, tx, ty, ty) != 0;
++		if (wallCache == null || !SETT.IN_BOUNDS(tx, ty))
++			return wall.is(tx, ty);
++		return wallCache.get(tx + ty*SETT.TWIDTH);
++	}
++	
+     private final MAP_BOOLEAN wall = new MAP_BOOLEAN() {
+         @Override
+         public boolean is(int tx, int ty) {
+@@ -262,9 +282,11 @@ public final class SettOrganics {
+     	private int[][] wallcounts = new int[dim][dim]; 
+     	int offX;
+     	int offY;
++    	private boolean ready; // GOUL: wallcounts holds the square at offX, offY
+     	
+     	void init(int sx, int sy) {
+     		
++    		ready = false; // GOUL
+     		//we get the x and y for the current chunk. We're going to count outside of that
+     		sx -= searchSize+blurSize;
+     		sy -= searchSize+blurSize;
+@@ -277,7 +299,7 @@ public final class SettOrganics {
+     		for (int dy = 0; dy < wallcounts.length-1; dy++) {
+     			
+     			for (int dx = 0; dx < wallcounts[dy].length-1; dx++) {
+-    				int wallVal = wall.is(sx + dx, sy + dy) ? 1 : 0;
++    				int wallVal = wallIs(sx + dx, sy + dy) ? 1 : 0; // GOUL: was wall.is
+                     
+     				wallcounts[dx + 1][dy + 1] = wallVal 
+                         + wallcounts[dx][dy + 1]     // Left
+@@ -285,9 +307,17 @@ public final class SettOrganics {
+                         - wallcounts[dx][dy];        // Top-Left (subtract duplicate)
+         		}
+     		}
++    		ready = true; // GOUL
+     		
+     	}
+     	
++    	// GOUL: whether count() can answer for this tile
++    	boolean holds(int tx, int ty) {
++    		int x = tx - offX;
++    		int y = ty - offY;
++    		return ready && x >= 0 && y >= 0 && x < dim-1 && y < dim-1;
++    	}
++    	
+     	private int count(int x1, int x2, int y1, int y2) {
+     		x1 -= offX;
+     		y1 -= offY;
+diff --git a/snake2d/TextureHolder.java b/snake2d/TextureHolder.java
+index 8d58e2b..4388137 100644
+--- a/snake2d/TextureHolder.java
++++ b/snake2d/TextureHolder.java
+@@ -135,6 +135,22 @@ public class TextureHolder extends CORE_RESOURCE{
+ 		
+ 	}
+ 	
++	// GOUL: putPixelBatch for many batches of the same size in one GL job, so the caller waits for the GL thread once
++	// instead of once per batch (a save load uploads the 576 minimap tiles this way)
++	public void putPixelBatches(int[] x1, int[] y1, int width, byte[] pixels){
++		int size = pixels.length/x1.length;
++		ByteBuffer drawBuff = BufferUtils.createByteBuffer(pixels.length);
++		drawBuff.put(pixels);
++		drawBuff.flip();
++		new CORE.GlJob() {
++			@Override
++			public void doJob() {
++				for (int i = 0; i < x1.length; i++)
++					texture.uploadPixels(x1[i], width, y1[i], size/(width*4), drawBuff.slice(i*size, size));
++			}
++		}.perform();
++	}
++	
+ 	public void addChunk(int x1, int y1, int width, int am, TextureHolderChunk chunk) {
+ 		chunk.x1 = x1;
+ 		chunk.y1 = y1;
+diff --git a/util/rendering/Minimap.java b/util/rendering/Minimap.java
+index 0917edc..5d7d377 100644
+--- a/util/rendering/Minimap.java
++++ b/util/rendering/Minimap.java
+@@ -58,6 +58,12 @@ public final class Minimap{
+ 		
+ 		int s = TILESIZE*TILESIZE;
+ 		byte[] tmp = Alloc.bb(s*4);
++		// GOUL: the tiles are collected and uploaded in one GL job at the end
++		int tiles = (DIM_PIXEL+TILESIZE-1)/TILESIZE;
++		int[] bx = new int[tiles*tiles];
++		int[] by = new int[tiles*tiles];
++		byte[] all = new byte[tiles*tiles*s*4];
++		int bi = 0;
+ 		
+ 		for (int py = 0; py < DIM_PIXEL; py+=TILESIZE) {
+ 			for (int px = 0; px < DIM_PIXEL; px+=TILESIZE) {
+@@ -73,9 +79,14 @@ public final class Minimap{
+ 						tmp[to+3] = pixels[from+3];
+ 					}
+ 				}
+-				GAME.texture().putPixelBatch(c.x1, c.y1, TILESIZE, tmp);
++				// GOUL: was GAME.texture().putPixelBatch(c.x1, c.y1, TILESIZE, tmp), which waited for the GL thread once per tile
++				bx[bi] = c.x1;
++				by[bi] = c.y1;
++				System.arraycopy(tmp, 0, all, bi*s*4, s*4);
++				bi++;
+ 			}
+ 		}
++		GAME.texture().putPixelBatches(bx, by, TILESIZE, all); // GOUL
+ 		
+ 	}
+ 	

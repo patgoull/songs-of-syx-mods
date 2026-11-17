@@ -1,0 +1,188 @@
+diff --git a/settlement/main/SETT.java b/settlement/main/SETT.java
+index ea0be3a..e16d01b 100644
+--- a/settlement/main/SETT.java
++++ b/settlement/main/SETT.java
+@@ -562,6 +562,21 @@ public final class SETT extends GameResource{
+ 		c.render(CORE.renderer(), x1, x2, y2, y2+32);
+ 	}
+ 	
++	private long goulLogNext = 0; // GOUL: test
++	private final long[] goulNs = new long[7]; // GOUL: test, render time per stage
++	private int goulFrames = 0; // GOUL: test
++	private static final String[] goulStage = {"top", "above", "people", "things", "jobs", "ground", "post"}; // GOUL: test
++	
++	private long goulTime(int stage, long from) { // GOUL: test
++		long now = System.nanoTime();
++		goulNs[stage] += now-from;
++		return now;
++	}
++	
++	private static String goulMs(snake2d.CoreStats.Value v) { // GOUL: test, CoreStats are % of a 60 fps frame
++		return String.format("%.1f", v.ave*1000.0/60/100);
++	}
++	
+ 	/**
+ 	 * 
+ 	 * @param r
+@@ -583,7 +598,24 @@ public final class SETT extends GameResource{
+ 		
+ 		ds *= GAME.SPEED.speedTarget();
+ 		
+-		if (zoomout == 3) {
++		// GOUL: test, logs last frame's sprite count every 3 s (the sprite buffer holds 262144 with this mod, more are dropped)
++		if (System.currentTimeMillis() > goulLogNext) {
++			goulLogNext = System.currentTimeMillis() + 3000;
++			snake2d.LOG.ln("GOUL live-zoom: zoom " + zoomout + ", sprites last frame " + r.getSpritesSprocessed() + " / 262144");
++			String st = "";
++			for (int i = 0; i < goulNs.length; i++) {
++				st += " " + goulStage[i] + " " + String.format("%.2f", goulFrames == 0 ? 0 : goulNs[i]/1e6/goulFrames);
++				goulNs[i] = 0;
++			}
++			goulFrames = 0;
++			snake2d.LOG.ln("GOUL perf: fps " + (int)snake2d.CoreStats.FPS.ave
++				+ ", ms update " + goulMs(snake2d.CoreStats.updatePercentage) + " render " + goulMs(snake2d.CoreStats.renderPercentage)
++				+ " flush " + goulMs(snake2d.CoreStats.coreFlush) + " sleep " + goulMs(snake2d.CoreStats.coreSleep) + " swap " + goulMs(snake2d.CoreStats.swapPercentage)
++				+ ", city render ms" + st);
++		}
++		
++		// GOUL: test, zoom 3 is drawn live like 0-2 instead of as the semi-map
++		if (zoomout == 3 && false) {
+ 			renderSemiMap(r, ds, zoomout, renWindow, offX, offY, con);
+ 			return;
+ 		}
+@@ -592,6 +624,8 @@ public final class SETT extends GameResource{
+ 		CORE.getSoundCore().set(renWindow.cX()+offX, renWindow.cY()+offY);
+ 		
+ 		
++		long goulT = System.nanoTime(); // GOUL: test
++		goulFrames++;
+ 		ShadowBatch s = shadowDummy;
+ 		if (S.get().shadows.get() > 0){
+ 			shadowBatch.init(zoomout, TIME.light().shadow.sx(), TIME.light().shadow.sy());
+@@ -611,6 +645,7 @@ public final class SETT extends GameResource{
+ 		}
+ 		
+ 		halfEnts.renderInit(renWindow);
++		goulT = goulTime(0, goulT); // GOUL: test
+ 		
+ //		r.newLayer(false, zoomout);
+ //		AmbientLight.full.register(0, C.WIDTH<<zoomout, 0, C.HEIGHT<<zoomout);
+@@ -625,11 +660,13 @@ public final class SETT extends GameResource{
+ 		
+ 		terrain.renderAboveEnts(r, s, ds, zoomout, renData);
+ 		battle.bannerR.render(r, s, ds, renWindow, offX, offY);
++		goulT = goulTime(1, goulT); // GOUL: test
+ 		//RENDER ENTITIES
+ 		
+ 
+ 		r.newLayer(false, zoomout);
+ 		eHandler.renderA(r, s, ds, renWindow, offX, offY);
++		goulT = goulTime(2, goulT); // GOUL: test
+ 		
+ 		r.newLayer(false, zoomout);
+ 		halfEnts.render(r, s, ds, renWindow, offX, offY);
+@@ -638,22 +675,26 @@ public final class SETT extends GameResource{
+ 		things.render(r, s, ds, renWindow, offX, offY);
+ 		r.newLayer(false, zoomout);
+ 		lights.render(r, s, ds, renWindow, offX, offY);
++		goulT = goulTime(3, goulT); // GOUL: test
+ 		
+ 		
+ 		
+ 		r.newLayer(false, zoomout);
+ 		VIEW.current().renderBelowTerrain(r, s, renData);
++		goulT = goulTime(4, goulT); // GOUL: test
+ 		
+ 		
+ 		r.newLayer(false, zoomout);
+ 		
+ 		terrain.renderTheRest(r, s, ds, zoomout, renData,renWindow, offX, offY);
++		goulT = goulTime(5, goulT); // GOUL: test
+ 		
+ 		for (SettResource rs : SettResource.resources) {
+ 			rs.postRender(ds);
+ 		}
+ 		
+ 		audio.makeSounds(zoomout, renData.area(), ds);
++		goulTime(6, goulT); // GOUL: test
+ 		
+ //		double dz = 1.0/(zoomout+1);
+ //		
+diff --git a/snake2d/ElementArrays.java b/snake2d/ElementArrays.java
+index b0e323d..5d6d523 100644
+--- a/snake2d/ElementArrays.java
++++ b/snake2d/ElementArrays.java
+@@ -72,7 +72,7 @@ abstract class ElementArrays {
+ 			return;
+ 		}
+ 		
+-		int[] indices = Alloc.ii((1<<16));
++		int[] indices = Alloc.ii((1<<17)); // GOUL: was 1<<16, the light buffer draws up to 1<<17 points in one call
+ 		for (int i = 0; i < indices.length; i++) {
+ 			indices[i] = i;
+ 		}
+diff --git a/snake2d/VboLightPoint.java b/snake2d/VboLightPoint.java
+index 75c285f..b8dabed 100644
+--- a/snake2d/VboLightPoint.java
++++ b/snake2d/VboLightPoint.java
+@@ -16,7 +16,8 @@ class VboLightPoint extends VboAbsExt {
+ 
+ 	VboLightPoint(SETTINGS sett) {
+ 
+-		super(GL_POINTS, 10000 * 3, new VboAttribute(3, GL_FLOAT, false, 4), // direction/centre position 3*4
++		super(GL_POINTS, 1<<17, // GOUL: was 10000 * 3, a big city at night at the furthest live zoom asks for ~67k lit tiles
++				new VboAttribute(3, GL_FLOAT, false, 4), // direction/centre position 3*4
+ 				new VboAttribute(2, GL_SHORT, false, 2), // coo 4
+ 				new VboAttribute(2, GL_SHORT, false, 2), // coo2 4
+ 				new VboAttribute(4, GL_FLOAT, false, 4), // colour 4*4
+@@ -86,6 +87,7 @@ class VboLightPoint extends VboAbsExt {
+ 	void render(LIGHT_POINT l, float x, float y, float z, int radius, int x1, int x2, int y1, int y2, byte ne, byte se,
+ 			byte sw, byte nw, byte depth) {
+ 
++		goulAsked++; // GOUL: test
+ 		if (count >= MAX_ELEMENTS) {
+ 			return;
+ 		}
+@@ -111,8 +113,20 @@ class VboLightPoint extends VboAbsExt {
+ 		super.dis();
+ 	}
+ 
++	// GOUL: test, lit tiles asked for in a frame, and the most in the last 3 s, logged with the buffer size
++	private int goulAsked, goulPeak;
++	private long goulLogNext;
++
+ 	@Override
+ 	public void clear() {
++		goulPeak = Math.max(goulPeak, goulAsked); // GOUL
++		goulAsked = 0;
++		if (System.currentTimeMillis() > goulLogNext) {
++			goulLogNext = System.currentTimeMillis() + 3000;
++			if (goulPeak > 0)
++				LOG.ln("GOUL live-zoom: light tiles peak " + goulPeak + " / " + MAX_ELEMENTS);
++			goulPeak = 0;
++		}
+ 		current = 0;
+ 		specialLayer = false;
+ 		super.clear();
+diff --git a/snake2d/VboSpriteOpti.java b/snake2d/VboSpriteOpti.java
+index d4a704d..107132a 100644
+--- a/snake2d/VboSpriteOpti.java
++++ b/snake2d/VboSpriteOpti.java
+@@ -36,7 +36,7 @@ final class VboSpriteOpti extends VboAbsExt{
+ 
+ 	public VboSpriteOpti(Shader shader) {
+ 		super( GL_POINTS,
+-				1<<17,
++				1<<18, // GOUL: was 1<<17, a full screen city at the furthest live zoom needs ~170k sprites
+ 				new VboAttribute(2, GL_SHORT, false, 2), // position upper left
+ 				new VboAttribute(2, GL_SHORT, false, 2), // position lower right
+ 				new VboAttribute(2, GL_UNSIGNED_SHORT, 2), // texture coords1
+@@ -87,6 +87,8 @@ final class VboSpriteOpti extends VboAbsExt{
+ 					continue;
+ 				if (f < 0)
+ 					f = 0;
++				if (t > am) // GOUL: only this chunk's sprites are uploaded, and the point index buffer has 1<<16
++					t = am;
+ 				if (t <= f)
+ 					continue;
+ 				

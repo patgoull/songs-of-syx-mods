@@ -1,0 +1,7 @@
+VERSION: "0.0.1",
+GAME_VERSION_MAJOR: 71,
+GAME_VERSION_MINOR: 90,
+NAME: "Goul - Faster Save",
+DESC: "Shorter save and autosave pauses with the same save file: the Saving box is drawn at most every 100 ms instead of 31 times (each a full redraw of the city that waits for the screen), and the file is written in 64 KB pieces instead of 512 bytes.",
+AUTHOR: "Goul",
+INFO: "Patch-style mod, replaces init.sprite.RLoadPrinter and snake2d.util.file.FilePutter. See patches/faster-save.patch",

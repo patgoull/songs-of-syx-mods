@@ -1,0 +1,7 @@
+VERSION: "0.0.1",
+GAME_VERSION_MAJOR: 71,
+GAME_VERSION_MINOR: 90,
+NAME: "Goul - Autopilot (test)",
+DESC: "Test tool, does nothing in normal play. Started with run.ps1 -Auto it loads a save, plays a fixed camera tour, logs frame rates, saves screenshots and quits.",
+AUTHOR: "Goul",
+INFO: "Test tool for this repo, not a suggestion for the game. Replaces menu.Menu, view.interrupter.ILoadScreen, view.world.ui.battle.UIWBattlePrompt, view.ui.message.Messages, view.ui.diplomacy.UIDipMessDeal and snake2d.Mouse (small additions).",

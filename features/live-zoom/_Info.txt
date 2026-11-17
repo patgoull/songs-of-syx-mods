@@ -1,0 +1,7 @@
+VERSION: "0.0.2",
+GAME_VERSION_MAJOR: 71,
+GAME_VERSION_MINOR: 90,
+NAME: "Goul - Live Zoom (test)",
+DESC: "Test: the furthest city zoom-out is drawn live, like the closer levels, instead of as the simplified semi-map. Zooming out further still opens the minimap. The engine's sprite buffer is doubled so a full screen city fits, and the light buffer is raised so no lights blink out at night.",
+AUTHOR: "Goul",
+INFO: "Patch-style test mod, replaces SETT, VboSpriteOpti, VboLightPoint and ElementArrays. See patches/live-zoom.patch",

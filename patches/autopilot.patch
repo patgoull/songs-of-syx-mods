@@ -1,0 +1,649 @@
+diff --git a/goul/autopilot/AutoChoice.java b/goul/autopilot/AutoChoice.java
+new file mode 100644
+index 0000000..0769383
+--- /dev/null
++++ b/goul/autopilot/AutoChoice.java
+@@ -0,0 +1,44 @@
++package goul.autopilot;
++
++import java.util.ArrayList;
++
++import snake2d.LOG;
++
++/**
++ * Popups that stop the game until something is clicked (battles, offers) take their default choice here instead, one
++ * update later as a click would come. Only with -Dgoul.autopilot; used by the copied vanilla classes.
++ */
++public final class AutoChoice {
++
++	private static final boolean ON = System.getProperty("goul.autopilot") != null;
++	private static final ArrayList<Runnable> pending = new ArrayList<>();
++
++	private AutoChoice() {
++
++	}
++
++	public static boolean on() {
++		return ON;
++	}
++
++	/** Queues the choice and logs it. Returns false without the autopilot: the caller then shows its popup. */
++	public static boolean later(String what, Runnable choice) {
++		if (!ON)
++			return false;
++		LOG.ln("GOUL auto: " + what);
++		pending.add(choice);
++		return true;
++	}
++
++	public static boolean busy() {
++		return !pending.isEmpty();
++	}
++
++	/** Called by the autopilot every update: runs one queued choice */
++	static void run() {
++		if (pending.isEmpty())
++			return;
++		pending.remove(0).run();
++	}
++
++}
+diff --git a/goul/autopilot/Autopilot.java b/goul/autopilot/Autopilot.java
+new file mode 100644
+index 0000000..79858f4
+--- /dev/null
++++ b/goul/autopilot/Autopilot.java
+@@ -0,0 +1,388 @@
++package goul.autopilot;
++
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.Paths;
++import java.nio.file.StandardCopyOption;
++import java.util.stream.Stream;
++
++import game.GAME;
++import game.time.TIME;
++import init.constant.C;
++import init.paths.PATHS;
++import script.SCRIPT;
++import settlement.main.SETT;
++import snake2d.CORE;
++import snake2d.CoreStats;
++import snake2d.LOG;
++import snake2d.util.file.FileGetter;
++import snake2d.util.file.FilePutter;
++import view.main.VIEW;
++import view.subview.GameWindow;
++
++/**
++ * Test only. When the game is started with -Dgoul.autopilot (run.ps1 -Auto), the menu loads a save right away and this
++ * script plays a fixed tour of the city: zoom levels by day, night, a pan and high speed. After each step it logs the
++ * frame rate and frame times ("GOUL auto:" lines) and saves a screenshot, then it quits the game without saving.
++ * Without the setting it does nothing and isn't offered in the game.
++ */
++public final class Autopilot implements SCRIPT {
++
++	private static final String MODE = System.getProperty("goul.autopilot");
++
++	@Override
++	public CharSequence name() {
++		return "Goul autopilot (test)";
++	}
++
++	@Override
++	public CharSequence desc() {
++		return "Test only: plays a fixed camera tour and quits, when started with run.ps1 -Auto.";
++	}
++
++	@Override
++	public boolean isSelectable() {
++		return false;
++	}
++
++	@Override
++	public boolean forceInit() {
++		return MODE != null;
++	}
++
++	@Override
++	public SCRIPT_INSTANCE createInstance() {
++		return new Tour();
++	}
++
++	private static abstract class Step {
++		final String name;
++		final double seconds;
++		final boolean shot;
++		final int zoom;
++
++		/** @param zoom kept for the whole step (the mouse wheel over the window would change it), or -1 */
++		Step(String name, double seconds, boolean shot, int zoom) {
++			this.name = name;
++			this.seconds = seconds;
++			this.shot = shot;
++			this.zoom = zoom;
++		}
++
++		void start() {
++		}
++
++		/** @param part 0 to 1 through the step */
++		void tick(double part) {
++		}
++	}
++
++	private static final class Tour implements SCRIPT_INSTANCE {
++
++		private final Step[] steps;
++		private int current = -1;
++		private long stepStart;
++		private long last;
++		private int frames;
++		private long worst;
++		private double stepGame;
++		private int shots;
++		/** time of the last update, read by the watchdog thread */
++		private volatile long alive;
++		private final Path out;
++
++		Tour() {
++			String o = System.getProperty("goul.autopilot.out");
++			out = o == null ? null : Paths.get(o);
++			if ("sim".equals(MODE)) {
++				steps = new Step[] { new Step("settle", 5, false, 1) {
++					@Override
++					void start() {
++						GAME.SPEED.speedSet(1);
++						center();
++					}
++				}, simWarm(), simStep() };
++				return;
++			}
++			if ("save".equals(MODE)) {
++				steps = new Step[] { new Step("settle", 5, false, 1) {
++					@Override
++					void start() {
++						GAME.SPEED.speedSet(1);
++						center();
++					}
++				}, saveStep(1), saveStep(2), saveStep(3) };
++				return;
++			}
++			if ("load".equals(MODE)) {
++				// load only: the timing line, a short settle for the first frames, then quit
++				steps = new Step[] { new Step("settle", 3, false, 1) {
++					@Override
++					void start() {
++						center();
++					}
++				} };
++				return;
++			}
++			steps = new Step[] {
++				new Step("settle", 8, false, 1) {
++					@Override
++					void start() {
++						GAME.SPEED.speedSet(1);
++						zoom(1);
++					}
++				},
++				zoomStep("day-zoom0", 0),
++				zoomStep("day-zoom1", 1),
++				zoomStep("day-zoom2", 2),
++				zoomStep("day-zoom3", 3),
++				new Step("night-zoom3", 6, true, 3) {
++					@Override
++					void start() {
++						night();
++						zoom(3);
++					}
++				},
++				zoomStep("night-zoom2", 2),
++				new Step("night-pan-zoom3", 10, true, 3) {
++					@Override
++					void start() {
++						zoom(3);
++					}
++
++					@Override
++					void tick(double part) {
++						double a = part * Math.PI * 2;
++						int r = 80 * C.TILE_SIZE;
++						window().centerAt(centerX() + (int) (Math.cos(a) * r), centerY() + (int) (Math.sin(a) * r));
++					}
++				},
++				new Step("night-speed3-zoom3", 10, false, 3) {
++					@Override
++					void start() {
++						center();
++						GAME.SPEED.speedSet(3);
++					}
++				},
++				simWarm(),
++				simStep(),
++			};
++		}
++
++		/** Saves into the output folder, never the game's saves, the way the autosave does (minified), and logs the time */
++		private Step saveStep(int i) {
++			return new Step("save-" + i, 4, false, 1) {
++				@Override
++				void start() {
++					Path dir = out != null ? out : Paths.get(".");
++					long t = System.nanoTime();
++					Path p = GAME.saver().save(dir, "goul-save-test", true);
++					double ms = (System.nanoTime() - t) / 1e6;
++					long kb = 0;
++					try {
++						kb = p == null ? 0 : Files.size(p) / 1024;
++					} catch (IOException e) {
++					}
++					LOG.ln(String.format(java.util.Locale.ROOT, "GOUL auto: save %d took %.0f ms, %d KB%s", i, ms, kb, p == null ? " (failed)" : ""));
++				}
++			};
++		}
++
++		/** The game ramps up to the set speed one step per update, and slows down when it can't keep up */
++		private static Step simWarm() {
++			return new Step("sim-warmup", 6, false, 1) {
++				@Override
++				void start() {
++					center();
++					GAME.SPEED.speedSet(250);
++				}
++			};
++		}
++
++		/** Simulation at the max speed (250x), at zoom 1 where drawing is cheap: "game x" is the speed reached */
++		private static Step simStep() {
++			return new Step("sim-speed250-zoom1", 15, false, 1) {
++			};
++		}
++
++		private static Step zoomStep(String name, int zoom) {
++			return new Step(name, 5, true, zoom) {
++				@Override
++				void start() {
++					zoom(zoom);
++				}
++			};
++		}
++
++		private static GameWindow window() {
++			return VIEW.s().getWindow();
++		}
++
++		/** The middle of the map: in the test city most of the town is there, both the part under the mountain (north) and outside */
++		private static void center() {
++			window().centerAt(centerX(), centerY());
++		}
++
++		private static int centerX() {
++			return SETT.TWIDTH * C.TILE_SIZE / 2;
++		}
++
++		private static int centerY() {
++			return SETT.THEIGHT * C.TILE_SIZE / 2;
++		}
++
++		private static void zoom(int z) {
++			window().setZoomout(z);
++			center();
++		}
++
++		/** The middle of the next night (scans the next two days in 1% steps) */
++		private static void night() {
++			double day = TIME.secondsPerDay();
++			double now = TIME.currentSecond();
++			int first = -1;
++			int end = -1;
++			for (int k = 1; k <= 200; k++) {
++				TIME.set(now + day * k / 100);
++				boolean n = TIME.light().nightIs();
++				if (n && first < 0)
++					first = k;
++				if (!n && first >= 0) {
++					end = k;
++					break;
++				}
++			}
++			if (first < 0) {
++				TIME.set(now);
++				LOG.ln("GOUL auto: no night found");
++				return;
++			}
++			if (end < 0)
++				end = 200;
++			TIME.set(now + day * ((first + end) / 2) / 100);
++		}
++
++		/** A popup this script doesn't handle stops the updates: quit after 60 s rather than keep the screen */
++		private void watchdog() {
++			Thread t = new Thread(() -> {
++				while (true) {
++					try {
++						Thread.sleep(5000);
++					} catch (InterruptedException e) {
++						return;
++					}
++					if (System.nanoTime() - alive > 60e9) {
++						LOG.ln("GOUL auto: stuck, no update for 60 s (a popup?), quitting");
++						System.exit(1);
++					}
++				}
++			}, "goul-autopilot-watchdog");
++			t.setDaemon(true);
++			t.start();
++		}
++
++		@Override
++		public void update(double ds) {
++			long now = System.nanoTime();
++			alive = now;
++			AutoChoice.run();
++			if (current < 0) {
++				LOG.ln("GOUL auto: game ready, mode " + MODE);
++				watchdog();
++				timing();
++				next(now);
++				return;
++			}
++			if (current >= steps.length)
++				return;
++
++			frames++;
++			worst = Math.max(worst, now - last);
++			last = now;
++
++			Step s = steps[current];
++			double part = (now - stepStart) / 1e9 / s.seconds;
++			if (part < 1) {
++				if (s.zoom >= 0 && window().zoomout() != s.zoom)
++					window().setZoomout(s.zoom);
++				s.tick(part);
++				return;
++			}
++
++			double sec = (now - stepStart) / 1e9;
++			LOG.ln(String.format(java.util.Locale.ROOT, "GOUL auto: %-20s fps %5.1f, updates/s %5.1f, worst gap %5.1f ms, game x%6.1f, ms update %5.2f render %5.2f flush %5.2f, zoom %d, night %b",
++					s.name, CoreStats.FPS.ave, frames / sec, worst / 1e6, (TIME.currentSecond() - stepGame) / sec, ms(CoreStats.updatePercentage), ms(CoreStats.renderPercentage),
++					ms(CoreStats.coreFlush), window().zoomout(), TIME.light().nightIs()));
++			if (s.shot)
++				shot(s.name);
++			next(System.nanoTime());
++		}
++
++		/** startup: java start to the automatic Continue (includes the menu's logo); load: Continue to the first game update */
++		private static void timing() {
++			try {
++				long start = java.lang.management.ManagementFactory.getRuntimeMXBean().getStartTime();
++				long cont = Long.parseLong(System.getProperty("goul.autopilot.continue"));
++				long now = System.currentTimeMillis();
++				LOG.ln(String.format(java.util.Locale.ROOT, "GOUL auto: timing startup %.2f s, load %.2f s", (cont - start) / 1000.0, (now - cont) / 1000.0));
++			} catch (Exception e) {
++				LOG.ln("GOUL auto: timing failed: " + e);
++			}
++		}
++
++		private void next(long now) {
++			current++;
++			if (current >= steps.length) {
++				LOG.ln("GOUL auto: done, quitting");
++				CORE.annihilate();
++				return;
++			}
++			steps[current].start();
++			stepGame = TIME.currentSecond();
++			stepStart = now;
++			last = now;
++			frames = 0;
++			worst = 0;
++		}
++
++		private static double ms(CoreStats.Value v) {
++			return v.ave * 1000.0 / 60 / 100;
++		}
++
++		/** The game's own screenshot (as with Print Screen), moved to the output folder */
++		private void shot(String name) {
++			try {
++				CORE.getGraphics().makeScreenShot();
++				if (out == null)
++					return;
++				Path dir = PATHS.local().SCREENSHOT.get();
++				Path newest = null;
++				try (Stream<Path> files = Files.list(dir)) {
++					for (Path p : (Iterable<Path>) files::iterator) {
++						String f = "" + p.getFileName();
++						if (f.startsWith("shot") && f.endsWith(".png")
++								&& (newest == null || Files.getLastModifiedTime(p).compareTo(Files.getLastModifiedTime(newest)) > 0))
++							newest = p;
++					}
++				}
++				if (newest == null)
++					return;
++				Files.createDirectories(out);
++				shots++;
++				Files.move(newest, out.resolve(String.format("%02d-%s.png", shots, name)), StandardCopyOption.REPLACE_EXISTING);
++			} catch (Exception e) {
++				LOG.ln("GOUL auto: screenshot failed: " + e);
++			}
++		}
++
++		@Override
++		public void save(FilePutter file) {
++		}
++
++		@Override
++		public void load(FileGetter file) throws IOException {
++		}
++	}
++
++}
+diff --git a/menu/Menu.java b/menu/Menu.java
+index 07f4311..2c24fb4 100644
+--- a/menu/Menu.java
++++ b/menu/Menu.java
+@@ -41,11 +41,13 @@ public class Menu extends CORE_STATE {
+ 	private final PointLight mouseLight;
+ 
+ 	private final Logo logo;
+-	private static boolean hasLogo = true;
++	private static boolean hasLogo = System.getProperty("goul.autopilot") == null; // GOUL: was true, the autopilot skips the logo
+ 
+ 	private final Intro intro;
+ 	private static boolean hasIntro = true;
+ 	private float fadeLight = 0;
++	// GOUL: test only, started with -Dgoul.autopilot (run.ps1 -Auto): load the save right away, as if Continue was clicked
++	private static boolean goulAuto = System.getProperty("goul.autopilot") != null;
+ 
+ 
+ 	public final RESOURCES res;
+@@ -128,6 +130,16 @@ public class Menu extends CORE_STATE {
+ 			hasLogo = logo.update(ds);
+ 			return;
+ 		}
++		if (goulAuto) { // GOUL
++			goulAuto = false;
++			System.setProperty("goul.autopilot.continue", "" + System.currentTimeMillis());
++			String save = System.getProperty("goul.autopilot.save");
++			if (save == null || save.isEmpty())
++				load.loadSave();
++			else
++				start(new game.save.GameLoader(init.paths.PATHS.local().save().get(save)));
++			return;
++		}
+ 
+ 		res.sound().play();
+ 
+diff --git a/snake2d/Mouse.java b/snake2d/Mouse.java
+index 9b80b12..4992daf 100644
+--- a/snake2d/Mouse.java
++++ b/snake2d/Mouse.java
+@@ -23,6 +23,9 @@ public class Mouse {
+ 	private final IntBuffer winW = BufferUtils.createIntBuffer(1);
+ 	private final IntBuffer winH = BufferUtils.createIntBuffer(1);
+ 	private final Coo MOUSE_COO = new Coo();
++	// GOUL: autopilot test tool. The real mouse is ignored (position, clicks, wheel), so a bumped mouse doesn't change a
++	// run: the cursor stays on an empty part of the top bar, where it shows no tooltip and doesn't scroll the view
++	private static final boolean goulAuto = System.getProperty("goul.autopilot") != null;
+ 
+ 	private final int clickMax = 100;
+ 	private final MButt[] clicks = new MButt[clickMax];
+@@ -41,6 +44,8 @@ public class Mouse {
+ 			@Override
+ 			public void invoke(long window, int button, int action, int mods) {
+ 
++				if (goulAuto) // GOUL
++					return;
+ 				if (button > 2) {
+ 					return;
+ 				}
+@@ -64,6 +69,8 @@ public class Mouse {
+ 
+ 			@Override
+ 			public void invoke(long window, double xoffset, double yoffset) {
++				if (goulAuto) // GOUL
++					return;
+ 				MButt.delta += yoffset;
+ 				MButt.wheelDy += (int) MButt.delta;
+ 				MButt.delta -= (int) MButt.delta;
+@@ -84,6 +91,11 @@ public class Mouse {
+ 
+ 	boolean update() {
+ 
++		if (goulAuto) { // GOUL
++			MOUSE_COO.xSet(CORE.getGraphics().canvasDim.width() / 3);
++			MOUSE_COO.ySet(20);
++			return false;
++		}
+ 		if (!CORE.getGraphics().isFocused())
+ 			return false;
+ 
+diff --git a/view/interrupter/ILoadScreen.java b/view/interrupter/ILoadScreen.java
+index 61be641..e1a9616 100644
+--- a/view/interrupter/ILoadScreen.java
++++ b/view/interrupter/ILoadScreen.java
+@@ -57,6 +57,8 @@ public class ILoadScreen extends Interrupter{
+ 	@Override
+ 	protected boolean update(float ds) {
+ 		
++		if (System.getProperty("goul.autopilot") != null) // GOUL: test only, the autopilot doesn't click
++			deactivate();
+ 		if (MButt.LEFT.consumeClick())
+ 			deactivate();
+ 		
+diff --git a/view/ui/diplomacy/UIDipMessDeal.java b/view/ui/diplomacy/UIDipMessDeal.java
+index fc4a6d1..49ee745 100644
+--- a/view/ui/diplomacy/UIDipMessDeal.java
++++ b/view/ui/diplomacy/UIDipMessDeal.java
+@@ -193,6 +193,19 @@ public final class UIDipMessDeal extends MessageSection{
+ 	
+ 
+ 	
++	/** GOUL: what the Accept button does, for the autopilot (no window is open, so nothing to hide) */
++	public void goulAccept() {
++		Deal d = DIP.TMP();
++		save.set(d);
++		if (pactive() != null)
++			return;
++
++		d.execute(false);
++		save.f().request.clear();
++		ROPINION.GIFTS().makeDeal(d.npc.npc(), happiness);
++		aa = 1;
++	}
++	
+ 	private CharSequence pactive() {
+ 
+ 		if (aa == 1)
+diff --git a/view/ui/message/Messages.java b/view/ui/message/Messages.java
+index 0fd296c..84557fa 100644
+--- a/view/ui/message/Messages.java
++++ b/view/ui/message/Messages.java
+@@ -177,6 +177,16 @@ public final class Messages {
+ 			return false;
+ 		}
+ 		
++		if (goul.autopilot.AutoChoice.on()) { // GOUL: autopilot test tool, the message window would stop the game until closed
++			m.isRead = true;
++			unread--;
++			if (m instanceof view.ui.diplomacy.UIDipMessDeal)
++				goul.autopilot.AutoChoice.later("offer \"" + m.title() + "\", accepted", () -> ((view.ui.diplomacy.UIDipMessDeal) m).goulAccept());
++			else
++				snake2d.LOG.ln("GOUL auto: message \"" + m.title() + "\", not opened");
++			return true;
++		}
++
+ 		if (imess.isActivated()) {
+ 			if (queued.hasRoom())
+ 				queued.add(m);
+diff --git a/view/world/ui/battle/UIWBattlePrompt.java b/view/world/ui/battle/UIWBattlePrompt.java
+index 10eb47b..8a6b857 100644
+--- a/view/world/ui/battle/UIWBattlePrompt.java
++++ b/view/world/ui/battle/UIWBattlePrompt.java
+@@ -2,6 +2,8 @@ package view.world.ui.battle;
+ 
+ import game.GAME;
+ import init.constant.C;
++import init.race.RACES;
++import init.trade.TR;
+ import snake2d.LOG;
+ import snake2d.MButt;
+ import snake2d.Renderer;
+@@ -12,6 +14,7 @@ import util.gui.misc.GBox;
+ import util.gui.panel.GPanel;
+ import view.interrupter.Interrupter;
+ import view.main.VIEW;
++import world.battle.spec.BATTLE_RESULT;
+ import world.battle.spec.WBattleResult;
+ import world.battle.spec.WBattleSiege;
+ import world.battle.spec.WBattleSpec;
+@@ -30,7 +33,7 @@ public class UIWBattlePrompt {
+ 	}
+ 	
+ 	public boolean isBusty() {
+-		return inter.isActivated();
++		return inter.isActivated() || goul.autopilot.AutoChoice.busy(); // GOUL: was inter.isActivated()
+ 	}
+ 	
+ 	public void battle(WBattleSpec battle) {
+@@ -55,6 +58,9 @@ public class UIWBattlePrompt {
+ 			return;
+ 		}
+ 		
++		if (goul.autopilot.AutoChoice.later("battle popup, auto-resolved", () -> battle.auto())) // GOUL
++			return;
++		
+ 		b.get(battle);
+ 		
+ 		
+@@ -66,15 +72,26 @@ public class UIWBattlePrompt {
+ 			LOG.err("Oh no!");
+ 			return;
+ 		}
++		if (goul.autopilot.AutoChoice.later("siege popup, retreated", () -> siege.retreat())) // GOUL
++			return;
+ 		inter.set(this.siege.getS(siege), true, siege.besiged.cx(), siege.besiged.cy());
+ 		
+ 	}
+ 	
+ 	public void result(WBattleSiege.Result siege) {
++		if (goul.autopilot.AutoChoice.later("conquer popup, abandoned", () -> siege.abandon(0, 0, new int[RACES.all().size()], new int[TR.ALL().size()]))) // GOUL
++			return;
+ 		inter.set(new Conquer(inter, siege), false, siege.besiged.cx(), siege.besiged.cy());
+ 	}
+ 	
+ 	public void result(WBattleResult battle, boolean retreat) {
++		if (goul.autopilot.AutoChoice.later("battle result " + battle.result + ", accepted", () -> { // GOUL: no slaves or spoils taken
++			if (battle.result == BATTLE_RESULT.VICTORY)
++				battle.accept(new int[battle.capturedRaces.length], new int[battle.lostResources.length]);
++			else
++				battle.accept(null, null);
++		}))
++			return;
+ 		inter.set(new Res(inter, battle, retreat), false,  battle.player.coo().x(), battle.player.coo().y());
+ 	}
+ 	

@@ -1,0 +1,7 @@
+VERSION: "0.0.1",
+GAME_VERSION_MAJOR: 71,
+GAME_VERSION_MINOR: 90,
+NAME: "Goul - Faster Load",
+DESC: "Loads saves faster with the same result: mod folders are checked once instead of on every file lookup, the minimap goes to the graphics card in one go instead of 576 waits, the organics map reads each wall once instead of dozens of times, and the environment flood uses a faster queue (same values). The last two also speed up the game while playing (+21% top speed in a 10k city).",
+AUTHOR: "Goul",
+INFO: "Patch-style mod, replaces VirtualFolder, TextureHolder, Minimap, SettOrganics, EUpdater, SettEnvShape and SettEnvMap. See patches/faster-load.patch",
