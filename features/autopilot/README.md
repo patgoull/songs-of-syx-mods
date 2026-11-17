@@ -9,7 +9,14 @@ save, plays a fixed tour of the city, logs a line per step, saves screenshots an
 ```
 
 Modes (`-Mode`): `tour` (default, below), `load` (only the startup and load timing, ~45 s), `sim` (the simulation at
-the game's max speed, 250x, ~30 s). `-Mods "A","B"` runs with exactly those mods instead of the launcher's list.
+the game's max speed, 250x, ~30 s), `save` (three saves into `build\auto`, timed), `look` (the middle of the map
+at fixed sun positions of one day: sunrise, morning, noon, afternoon, sunset, twilight, night, paused, ~1 minute).
+`-Mods "A","B"` runs with exactly those mods instead of the launcher's list.
+
+`.\tools\look.ps1 -B "<mod>"` runs `look` without and with a mod and puts each pair of shots side by side in
+`build\look\compare` (needs Python with Pillow), for mods that change how the game looks.
+`-Focus <room key>` (e.g. `REFINER_SMELTER`, the room's file name) looks at the room of that type with the most
+workers instead of the middle of the map, in any mode.
 
 ## Comparing two builds: `tools\ab.ps1`
 

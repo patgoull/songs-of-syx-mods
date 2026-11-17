@@ -50,10 +50,10 @@ index 0000000..0769383
 +}
 diff --git a/goul/autopilot/Autopilot.java b/goul/autopilot/Autopilot.java
 new file mode 100644
-index 0000000..79858f4
+index 0000000..b7820e7
 --- /dev/null
 +++ b/goul/autopilot/Autopilot.java
-@@ -0,0 +1,388 @@
+@@ -0,0 +1,489 @@
 +package goul.autopilot;
 +
 +import java.io.IOException;
@@ -69,6 +69,9 @@ index 0000000..79858f4
 +import init.paths.PATHS;
 +import script.SCRIPT;
 +import settlement.main.SETT;
++import settlement.room.main.RoomBlueprint;
++import settlement.room.main.RoomBlueprintIns;
++import settlement.room.main.RoomInstance;
 +import snake2d.CORE;
 +import snake2d.CoreStats;
 +import snake2d.LOG;
@@ -169,6 +172,20 @@ index 0000000..79858f4
 +						center();
 +					}
 +				}, saveStep(1), saveStep(2), saveStep(3) };
++				return;
++			}
++			if ("look".equals(MODE)) {
++				// the same spot at fixed sun positions of one day, for comparing how the game looks
++				steps = new Step[] { new Step("settle", 6, false, 1) {
++					@Override
++					void start() {
++						GAME.SPEED.speedSet(1);
++						zoom(1);
++						findSun();
++					}
++				}, sunStep("look-1-sunrise", 0.03), sunStep("look-2-morning", 0.12), sunStep("look-3-noon", 0.5),
++						sunStep("look-4-afternoon", 0.82), sunStep("look-5-sunset", 0.97), sunStep("look-6-twilight", 1.06),
++						sunStep("look-7-night", -1), sunStep("look-8-night-zoom0", -1) };
 +				return;
 +			}
 +			if ("load".equals(MODE)) {
@@ -281,11 +298,50 @@ index 0000000..79858f4
 +		}
 +
 +		private static int centerX() {
++			if (focusX >= 0)
++				return focusX * C.TILE_SIZE + C.TILE_SIZEH;
 +			return SETT.TWIDTH * C.TILE_SIZE / 2;
 +		}
 +
 +		private static int centerY() {
++			if (focusX >= 0)
++				return focusY * C.TILE_SIZE + C.TILE_SIZEH;
 +			return SETT.THEIGHT * C.TILE_SIZE / 2;
++		}
++
++		/** the tile to look at instead of the middle of the map, from -Dgoul.autopilot.focus, or -1 */
++		private static int focusX = -1;
++		private static int focusY = -1;
++
++		/** -Dgoul.autopilot.focus=<room key> (e.g. REFINER_SMELTER): the room of that type with the most workers */
++		private static void findFocus() {
++			String key = System.getProperty("goul.autopilot.focus");
++			if (key == null || key.isEmpty())
++				return;
++			RoomInstance best = null;
++			int bestW = -1;
++			try {
++				for (RoomBlueprint b : SETT.ROOMS().all()) {
++					if (!key.equals(b.key) || !(b instanceof RoomBlueprintIns<?>))
++						continue;
++					for (RoomInstance ins : ((RoomBlueprintIns<?>) b).all()) {
++						int w = ins.employees() == null ? 0 : ins.employees().employed();
++						if (w > bestW) {
++							best = ins;
++							bestW = w;
++						}
++					}
++				}
++			} catch (Exception e) {
++				LOG.ln("GOUL auto: focus failed: " + e);
++			}
++			if (best == null) {
++				LOG.ln("GOUL auto: no room " + key + ", looking at the middle of the map");
++				return;
++			}
++			focusX = best.body().cX();
++			focusY = best.body().cY();
++			LOG.ln("GOUL auto: focus " + key + " at " + focusX + "," + focusY + ", " + bestW + " workers");
 +		}
 +
 +		private static void zoom(int z) {
@@ -319,6 +375,50 @@ index 0000000..79858f4
 +			TIME.set(now + day * ((first + end) / 2) / 100);
 +		}
 +
++		/** game seconds of the next sunrise and the sunset after it, set by findSun */
++		private static double sunrise = -1;
++		private static double sunset = -1;
++
++		/** Finds the next sunrise and the sunset after it (scans the next two days in 0.25% steps) and goes back to now */
++		private static void findSun() {
++			double day = TIME.secondsPerDay();
++			double now = TIME.currentSecond();
++			boolean wasNight = TIME.light().nightIs();
++			for (int k = 1; k <= 800 && sunset < 0; k++) {
++				double t = now + day * k / 400;
++				TIME.set(t);
++				boolean n = TIME.light().nightIs();
++				if (wasNight && !n)
++					sunrise = t;
++				else if (!wasNight && n && sunrise >= 0)
++					sunset = t;
++				wasNight = n;
++			}
++			TIME.set(now);
++			if (sunset < 0)
++				LOG.ln("GOUL auto: no sunrise and sunset found");
++		}
++
++		/**
++		 * @param part of the daylight after the sunrise found by findSun (0 sunrise, 1 sunset, above 1 the night after it
++		 *             by daylight lengths), or -1 for the middle of that night. Zoom 1, or 0 when the name ends with zoom0.
++		 */
++		private static Step sunStep(String name, double part) {
++			int z = name.endsWith("zoom0") ? 0 : 1;
++			return new Step(name, 3, true, z) {
++				@Override
++				void start() {
++					if (sunset < 0)
++						return;
++					double light = sunset - sunrise;
++					double t = part >= 0 ? sunrise + light * part : sunset + (TIME.secondsPerDay() - light) / 2;
++					TIME.set(t);
++					GAME.SPEED.speedSet(0);
++					zoom(z);
++				}
++			};
++		}
++
 +		/** A popup this script doesn't handle stops the updates: quit after 60 s rather than keep the screen */
 +		private void watchdog() {
 +			Thread t = new Thread(() -> {
@@ -347,6 +447,7 @@ index 0000000..79858f4
 +				LOG.ln("GOUL auto: game ready, mode " + MODE);
 +				watchdog();
 +				timing();
++				findFocus();
 +				next(now);
 +				return;
 +			}

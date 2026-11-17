@@ -18,7 +18,7 @@ param(
 	[string[]]$B = @(),
 	[string]$LabelA = "",
 	[string]$LabelB = "",
-	[ValidateSet("tour", "load", "sim", "save")][string]$Mode = "tour",
+	[ValidateSet("tour", "load", "sim", "save", "look")][string]$Mode = "tour",
 	[int]$Runs = 3,
 	[string]$Save = ""
 )

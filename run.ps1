@@ -12,8 +12,11 @@
   autopilot mod is enabled for that run only. The save is pinned in build\auto\save.txt (the newest save on the first
   run, or -Save <name>) so runs stay comparable even if the game autosaves.
   -Mode load only times startup and load; -Mode sim runs the simulation at 250x; -Mode save saves 3 times into
-  build\auto (never the game's saves) and logs how long each took. -Mods "A","B" runs with exactly those
-  mods (plus the autopilot) instead of the launcher's list, e.g. -Mods @() for vanilla. Used by tools\ab.ps1.
+  build\auto (never the game's saves) and logs how long each took; -Mode look screenshots one spot at sunrise,
+  morning, noon, afternoon, sunset, twilight and night (tools\look.ps1 compares two mod sets). -Mods "A","B" runs
+  with exactly those mods (plus the autopilot) instead of the launcher's list, e.g. -Mods @() for vanilla. Used by
+  tools\ab.ps1 and tools\look.ps1. -Focus <room key> (e.g. REFINER_SMELTER) looks at the busiest room of that type
+  instead of the middle of the map.
 
 .EXAMPLE
   .\run.ps1 -Launcher
@@ -26,8 +29,9 @@ param(
 	[switch]$Profile,
 	[switch]$Auto,
 	[string]$Save = "",
-	[ValidateSet("tour", "load", "sim", "save")][string]$Mode = "tour",
+	[ValidateSet("tour", "load", "sim", "save", "look")][string]$Mode = "tour",
 	[string[]]$Mods = $null,
+	[string]$Focus = "",
 	[string]$GameDir = "C:\Steam\steamapps\common\Songs of Syx"
 )
 
@@ -81,6 +85,7 @@ if ($Auto) {
 	[IO.File]::WriteAllText($settingsFile, [regex]::Replace($text, $modsPattern, { param($m) $block }))
 	Write-Host "Mods for this run: $($list -join ', ')"
 	$javaOptions += "-Dgoul.autopilot=$Mode", "-Dgoul.autopilot.save=$Save", "-Dgoul.autopilot.out=$autoDir"
+	if ($Focus) { $javaOptions += "-Dgoul.autopilot.focus=$Focus" }
 }
 if ($javaOptions) { $env:JAVA_TOOL_OPTIONS = $javaOptions -join " " }
 
