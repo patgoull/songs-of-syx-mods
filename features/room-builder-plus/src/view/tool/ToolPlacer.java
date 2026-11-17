@@ -212,7 +212,7 @@ public final class ToolPlacer extends Tool{
 	@Override
 	public void click(GameWindow window) {
 		pressed = true;
-		current.click(window, current != origional);
+		current.click(window, placer != origional);
 		
 	}
 	
@@ -221,11 +221,11 @@ public final class ToolPlacer extends Tool{
 		
 
 		if (pressed && !MButt.LEFT.isDown()) {
-			current.clickRelease(window, current != origional);
+			current.clickRelease(window, placer != origional);
 		}
 		update(ds, window);
 		
-		current.updateHovered(ds, window, pressed, current != origional);
+		current.updateHovered(ds, window, pressed, placer != origional);
 	}
 
 	@Override

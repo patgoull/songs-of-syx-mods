@@ -2315,7 +2315,7 @@ index a1f462d..38f46a0 100644
  		
  		@Override
 diff --git a/view/tool/ToolPlacer.java b/view/tool/ToolPlacer.java
-index 7099854..156ff48 100644
+index 8e21cbf..8e37529 100644
 --- a/view/tool/ToolPlacer.java
 +++ b/view/tool/ToolPlacer.java
 @@ -56,7 +56,7 @@ public final class ToolPlacer extends Tool{

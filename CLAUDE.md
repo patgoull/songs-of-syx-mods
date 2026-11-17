@@ -7,8 +7,8 @@ Full guide: [docs/MODDING_GUIDE.md](docs/MODDING_GUIDE.md).
 edit of a copied vanilla class, in Jake's style, with no Lombok and one feature per patch. Not using the template's Maven. See [docs/STRATEGY.md](docs/STRATEGY.md).
 
 ## Environment
-- Game: **V71.86** (Steam beta branch; stable is 71.44), `C:\Steam\steamapps\common\Songs of Syx` (NOT `Program Files (x86)`; template paths must be changed)
-- Game source: `info/source/SongsOfSyx-sources.jar` (zip, 71.86) plus `info/source/DIFF_0_71_xx.txt` changelogs per patch.
+- Game: **V71.90** (Steam beta branch; stable is 71.44), `C:\Steam\steamapps\common\Songs of Syx` (NOT `Program Files (x86)`; template paths must be changed)
+- Game source: `info/source/SongsOfSyx-sources.jar` (zip, 71.90) plus `info/source/DIFF_0_71_xx.txt` changelogs per patch.
   `info/SongsOfSyx-sources.jar` is a stale 71.79 copy, don't use it. Vanilla data: `base/data.zip` → `data/assets/{init,text,sprite,audio}`
 - Dev mods folder: `%APPDATA%\songsofsyx\mods`; logs: `%APPDATA%\songsofsyx\logs`
 - Workshop: `C:\Steam\steamapps\workshop\content\1162750`
@@ -37,6 +37,11 @@ edit of a copied vanilla class, in Jake's style, with no Lombok and one feature 
 - `vanilla/<version>/`: extracted game source (gitignored). `features/<name>/{src,_Info.txt,README.md,assets?}`: one mod per feature.
 - `.\build.ps1 <feature> [-Install]`: javac against `SongsOfSyx.jar`, jar into `build/`, writes `patches/<feature>.patch`, installs to `%APPDATA%\songsofsyx\mods`.
 - `.\run.ps1 [-Launcher]`: runs the game from the console (no launcher = mods from `settings/LauncherSettings.txt`), output saved to `build/game.log`. Read that log when debugging.
+- `.\run.ps1 -Auto [-Profile]`: the game plays itself (`features/autopilot`, test tool): loads the pinned save, runs a fixed
+  camera tour, logs `GOUL auto:` lines, saves screenshots in `build/auto`, quits. Run it in the background and read the
+  results instead of asking the user to click. `-Profile` adds a JFR profile (`tools/jfr-hot.py`).
+- `.\tools\ab.ps1 -B "<mod>" [-A ...] [-Mode tour|load|sim] [-Runs 3]`: A/B of two mod sets on the autopilot, medians in
+  `build/ab/report.md`. Game runs take the user's screen: start them only when the user says the PC is free.
 - To change a vanilla class: copy it from `vanilla/` into the feature's `src/` at the same path, then edit. Keep edits additive and marked `// GOUL`.
 - Check the diff after editing: the Edit tool strips tabs on blank lines, which shows up as fake `-\t` lines in the patch. Restore them so vanilla lines stay untouched.
 

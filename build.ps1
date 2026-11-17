@@ -9,7 +9,7 @@ param(
 	[Parameter(Mandatory = $true)][string]$Feature,
 	[switch]$Install,
 	[string]$GameDir = "C:\Steam\steamapps\common\Songs of Syx",
-	[string]$GameVersion = "71.86"
+	[string]$GameVersion = "71.90"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,11 +29,15 @@ $info = Join-Path $featureDir "_Info.txt"
 $modName = ([regex]::Match((Get-Content $info -Raw), 'NAME:\s*"([^"]+)"')).Groups[1].Value
 if (-not $modName) { throw "NAME missing in $info" }
 
-# Vanilla sources use CRLF, keep ours the same so patches only show real changes
+# Keep each file's line endings the same as its vanilla original (mostly CRLF, a few are LF, e.g. snake2d/TextureHolder)
+# so patches only show real changes. New files get CRLF.
 $sources = @(Get-ChildItem $srcDir -Recurse -Filter *.java)
 foreach ($f in $sources) {
 	$text = [IO.File]::ReadAllText($f.FullName, $utf8)
-	$fixed = $text -replace "`r?`n", "`r`n"
+	$eol = "`r`n"
+	$vanillaFile = Join-Path $vanillaDir $f.FullName.Substring($srcDir.Length + 1)
+	if ((Test-Path $vanillaFile) -and -not ([IO.File]::ReadAllText($vanillaFile, $utf8)).Contains("`r`n")) { $eol = "`n" }
+	$fixed = $text -replace "`r?`n", $eol
 	if ($fixed -ne $text) { [IO.File]::WriteAllText($f.FullName, $fixed, $utf8) }
 }
 
